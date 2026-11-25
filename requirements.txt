@@ -20,7 +20,7 @@
 # Pinning one commit only guarantees the next break gets stuck: let new
 # releases in, and upgrade with `pip install -U yt-dlp` when YouTube breaks.
 yt-dlp>=2026.11.23
-websockets>=13,<18
+websockets>=17.4,<18
 
 # ---- transcription and vision --------------------------------------------
 # MFCC features for the active-speaker model. Tiny and pure Python; the
