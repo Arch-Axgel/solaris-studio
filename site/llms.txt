@@ -1,0 +1,157 @@
+# Solaris Studio
+
+> Free, open-source AI video clipping software and Opus Clip alternative that
+> runs entirely on your own Windows PC.
+> Paste a Twitch VOD, Kick VOD or YouTube link and it finds the moments worth
+> posting, crops them to vertical with the speaker kept in frame, burns in
+> word-synced captions and writes the titles. No uploads, no subscription, no
+> per-clip fee. AGPL-3.0.
+
+Solaris Studio is a desktop application, not a web service. Everything (the
+transcription, the clip selection, the subject tracking and the language model)
+runs on the user's own machine by default. When the PC is too old, OpenRouter,
+signed in with the user's own account, can run the language model or the
+transcription instead. It is a local-first, open-source alternative to
+Opus Clip and other cloud clipping tools, aimed at creators who would rather not
+pay per video or upload their footage to someone else's server.
+
+## Mission
+
+Solaris Studio is a free, open-source AI video editor built to help small
+streamers and creators turn their long-form videos and livestreams into
+short-form content without hiring an editor or spending hours editing footage
+themselves.
+
+## How it compares to Opus Clip
+
+- **Price:** free, AGPL-3.0, no paid tier. Opus Clip has a free tier plus
+  $15/mo and $29/mo plans (checked 12 September 2026).
+- **Uploads:** none. The video is read where it sits. Opus Clip uploads the
+  whole video to its servers before processing.
+- **Limits:** no clip cap, no watermark, no export expiry. Opus Clip's free
+  tier watermarks, caps at 1080p and expires exports after three days.
+- **The catch:** Solaris Studio needs Windows, 16 GB of RAM and ideally an NVIDIA
+  GPU. Opus Clip runs in any browser, including on a phone. If you have no
+  suitable PC, or you clip only occasionally, Opus Clip is the better choice.
+
+## What it actually does
+
+- **Transcribes** with faster-whisper at word level, so captions land on the
+  right syllable and clips start on real sentence boundaries.
+- **Scores** candidate moments with a local language model reading the
+  transcript alongside audio and visual signals: loudness, laughter-shaped
+  bursts, scene cuts, motion, on-screen reactions.
+- **Reframes** to 9:16 with YOLO pose tracking and active-speaker detection, so
+  the person talking stays in shot and it cuts between speakers rather than
+  zooming out to hold both.
+- **Frames matches and game streams**: a soccer match follows the ball (the
+  Sports toggle); Gaming / Reaction puts the webcam and the game together in one
+  of eleven layouts; a stream that was 9:16 all along keeps its own layout
+  (Vertical Live).
+- **Watches channels**: new videos on a YouTube, Twitch or Kick channel are
+  spotted (YouTube's through its RSS feed) and clipped by themselves.
+- **Takes requests in a sentence**: the Ask Solaris Studio box at the bottom of the
+  app queues a video, takes what the clips should be about and how they should
+  look. It needs a Gemma 4 model (`gemma4:e4b`, or `gemma4:e2b` under 6 GB of
+  VRAM), installed from the app's Models page, or the cloud model the user chose.
+- **Posts, if asked**: clips go to nine platforms at once through a publishing
+  service the user connects, now, on a schedule, or hands-off for a watched
+  channel.
+- **Edits**: a built-in editor for fixing anything the AI got wrong, caption
+  styling, watermarks, multilingual captions and dubbing.
+
+## What it is good and bad at
+
+- **Good at:** IRL, just chatting, podcasts, vlogs, interviews. That is what it
+  is tuned for and tested on.
+- **Also does:** game streams and reaction videos (Gaming / Reaction), and
+  soccer matches (Sports), with goals read from the score box, the crowd and the
+  commentary.
+- **Not yet:** basketball and cricket, next on the roadmap. VTubers are not
+  supported: the framing needs a real person on camera.
+
+## Requirements
+
+Windows 10 or 11, 64-bit. 16 GB RAM recommended, ~20 GB free disk. An NVIDIA
+GPU is strongly recommended. It runs on CPU, just far slower. One installer
+carries the app, the engine, FFmpeg, the Ollama runtime and the tracking and
+transcription models; the language model downloads on first launch, sized to
+the graphics card.
+
+Install it from the Microsoft Store, with the Web Setup from the GitHub releases,
+or from a terminal: `winget install Arch-Axgel.SolarisStudio`.
+
+## For developers
+
+The Solaris Studio SDK (`solarisstudio_sdk`, Python, MIT) is for writing a small
+plugin that finds, understands or rates the moments in a video, for one game
+or one kind of show; Solaris Studio does the rest: the download, the transcript,
+and cutting, framing and captioning the clips. Every step is optional: one
+plugin can find the moments, and up to 3 can understand and up to 3 can rate
+them. Up to 3 can suggest edits for the clips, which wait for the creator in
+the editor. Posting isn't a plugin step: Solaris Studio posts clips itself, and
+through WoopSocial (https://woopsocial.com/?via=solarisstudio) it can post to
+many sites at once on the creator's own account. Affiliate link - Solaris Studio
+may earn a commission if you sign up through it, at no extra cost to you.
+A plugin runs on Solaris Studio's own Python 3.11, with the standard
+library (minus a few modules it leaves out) and the SDK, on the creator's PC
+with the creator's rights, like any program: Solaris Studio doesn't sandbox it,
+and its install screen shows what the plugin declares. The templates and
+tutorial use Quarkbloom Arena, a made-up game.
+
+No Solaris Studio release runs plugins yet. Plugins made with SDK 1.2.0 need the
+first release that includes it; until that is out, run Solaris Studio from source.
+
+- [Solaris Studio SDK](https://arch-axgel.github.io/solaris-studio/developers.html)
+- [Your first game pipeline](https://github.com/Arch-Axgel/solaris-studio/blob/main/docs/developers/first-game-pipeline.md)
+- [SDK reference](https://github.com/Arch-Axgel/solaris-studio/blob/main/docs/developers/sdk.md)
+- [Developer docs](https://github.com/Arch-Axgel/solaris-studio/blob/main/docs/developers/getting-started.md)
+
+## Links
+
+- [Website](https://arch-axgel.github.io/solaris-studio/)
+- [Source on GitHub](https://github.com/Arch-Axgel/solaris-studio)
+- [Download](https://github.com/Arch-Axgel/solaris-studio/releases)
+- [Solaris Studio Web](https://solaris-studio-web.vercel.app/): the clip picking in a
+  browser, on a Twitch or Kick VOD or a local file, billed to the visitor's own
+  OpenRouter account. No vertical framing or captions; those are the desktop app.
+- [Architecture](https://github.com/Arch-Axgel/solaris-studio/blob/main/ARCHITECTURE.md)
+- [Changelog](https://arch-axgel.github.io/solaris-studio/changelog.html)
+- [Roadmap](https://arch-axgel.github.io/solaris-studio/roadmap.html)
+- [Known issues](https://github.com/Arch-Axgel/solaris-studio/blob/main/KNOWN-ISSUES.md)
+- [Twitch clip generator: Twitch VODs into TikTok clips, Shorts and Reels](https://arch-axgel.github.io/solaris-studio/twitch.html)
+- [Kick clip generator: Kick VODs into TikTok clips, Shorts and Reels](https://arch-axgel.github.io/solaris-studio/kick.html)
+- [Clipping YouTube](https://arch-axgel.github.io/solaris-studio/youtube.html)
+- [Game stream clips](https://arch-axgel.github.io/solaris-studio/gaming.html)
+- [Soccer highlight clips](https://arch-axgel.github.io/solaris-studio/sports.html)
+- [Local vs cloud clipping](https://arch-axgel.github.io/solaris-studio/local-vs-cloud.html)
+- [Opus Clip alternative](https://arch-axgel.github.io/solaris-studio/opus-clip-alternative.html)
+- [Descript alternative](https://arch-axgel.github.io/solaris-studio/descript-alternative.html)
+
+## In other languages
+
+The same overview, written in each language the app supports:
+[Español](https://arch-axgel.github.io/solaris-studio/es.html) ·
+[Português](https://arch-axgel.github.io/solaris-studio/pt.html) ·
+[Français](https://arch-axgel.github.io/solaris-studio/fr.html) ·
+[Deutsch](https://arch-axgel.github.io/solaris-studio/de.html) ·
+[हिन्दी](https://arch-axgel.github.io/solaris-studio/hi.html) ·
+[Bahasa Indonesia](https://arch-axgel.github.io/solaris-studio/id.html) ·
+[日本語](https://arch-axgel.github.io/solaris-studio/ja.html) ·
+[Русский](https://arch-axgel.github.io/solaris-studio/ru.html) ·
+[العربية](https://arch-axgel.github.io/solaris-studio/ar.html) ·
+[简体中文](https://arch-axgel.github.io/solaris-studio/zh.html) ·
+[Tiếng Việt](https://arch-axgel.github.io/solaris-studio/vi.html) ·
+[Filipino](https://arch-axgel.github.io/solaris-studio/tl.html) ·
+[Türkçe](https://arch-axgel.github.io/solaris-studio/tr.html) ·
+[اردو](https://arch-axgel.github.io/solaris-studio/ur.html) ·
+[বাংলা](https://arch-axgel.github.io/solaris-studio/bn.html) ·
+[ไทย](https://arch-axgel.github.io/solaris-studio/th.html) ·
+[한국어](https://arch-axgel.github.io/solaris-studio/ko.html) ·
+[Italiano](https://arch-axgel.github.io/solaris-studio/it.html)
+
+## Status
+
+Alpha. It works and is used daily, but it is early and has rough edges, which
+are listed honestly in the known-issues document rather than discovered by
+users.

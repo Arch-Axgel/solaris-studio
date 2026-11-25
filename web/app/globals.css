@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+/* Solaris Studio brand. Same values as site/styles.css and whop-app's
+   globals.css in the main repo — if the site palette changes, change it here
+   too, or the tool stops looking like the thing it is advertising.
+
+   Deliberately dark for everyone rather than following the visitor's system
+   theme: the product's own identity is dark, and a half-matched theme reads
+   as somebody else's page. */
+:root {
+	--cs-base: #130a0d;
+	--cs-surface: #1e1115;
+	--cs-raised: #2e1a21;
+	--cs-accent: #d8b263;
+	--cs-accent-strong: #ecc87c;
+	--cs-ink: #f6ede7;
+	--cs-muted: #bba5a8;
+	--cs-success: #74d39b;
+	--cs-warn: #f2a65a;
+	--cs-danger: #f27a84;
+	--cs-radius: 14px;
+	--cs-line: rgba(187, 165, 168, 0.18);
+}
+
+body {
+	background: var(--cs-base);
+	color: var(--cs-ink);
+	font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+	/* Inherits to form controls and scrollbars, so a light-mode visitor does
+	   not get pale native widgets on a dark page. */
+	color-scheme: dark;
+}
+
+.cs-card {
+	background: var(--cs-surface);
+	border: 1px solid var(--cs-line);
+	border-radius: var(--cs-radius);
+}
+
+.cs-raised {
+	background: var(--cs-raised);
+	border: 1px solid var(--cs-line);
+	border-radius: var(--cs-radius);
+}
+
+.cs-btn {
+	background: var(--cs-accent);
+	color: #130a0d;
+	border-radius: 10px;
+	font-weight: 650;
+	transition: background 120ms ease;
+}
+
+.cs-btn:hover:not(:disabled) {
+	background: var(--cs-accent-strong);
+}
+
+.cs-btn:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+
+.cs-btn-quiet {
+	background: transparent;
+	color: var(--cs-ink);
+	border: 1px solid var(--cs-line);
+	border-radius: 10px;
+	transition: border-color 120ms ease;
+}
+
+.cs-btn-quiet:hover:not(:disabled) {
+	border-color: var(--cs-accent);
+}

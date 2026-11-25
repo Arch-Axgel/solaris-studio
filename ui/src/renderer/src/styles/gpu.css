@@ -1,0 +1,86 @@
+/* gpu.css. The GPU setup card (components/GpuSetupCard.tsx, .gpu-).
+   Tokens come from theme.css; nothing here animates on its own, and the one
+   transition is dropped under reduced motion. */
+
+.gpu-card { display: flex; flex-direction: column; gap: 12px }
+
+.gpu-card-line {
+  font-size: 0.8125rem;
+  color: var(--color-muted);
+  overflow-wrap: anywhere;
+}
+
+.gpu-layers {
+  display: grid;
+  grid-template-columns: max-content max-content 1fr;
+  gap: 8px 12px;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.gpu-layer { display: contents }
+.gpu-layer-name { font-weight: 600; font-size: 0.875rem }
+.gpu-layer-reason {
+  font-size: 0.8125rem;
+  color: var(--color-muted);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+/* Narrow panes: the reason drops under its name and chip. */
+@media (max-width: 640px) {
+  .gpu-layers { grid-template-columns: max-content 1fr }
+  .gpu-layer-reason { grid-column: 1 / -1; margin-bottom: 4px }
+}
+
+.gpu-progress { display: flex; flex-direction: column; gap: 6px }
+.gpu-progress-msg,
+.gpu-why,
+.gpu-result {
+  font-size: 0.8125rem;
+  color: var(--color-muted);
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+.gpu-result { color: inherit }
+
+.gpu-offer { display: flex; flex-direction: column; gap: 8px }
+.gpu-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px }
+
+.gpu-command {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-sm);
+  background: var(--color-abyss);
+}
+.gpu-command code {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.gpu-log {
+  max-height: 220px;
+  overflow: auto;
+  margin: 6px 0 0;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-abyss);
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  transition: max-height var(--dur-2) var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gpu-log { transition: none }
+}
+:root[data-motion='reduced'] .gpu-log { transition: none }

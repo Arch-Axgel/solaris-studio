@@ -1,0 +1,417 @@
+@import 'tailwindcss';
+@import './styles/motion.css';
+@import './styles/shell.css';
+@import './styles/b2-layers.css';
+@import './styles/b3-home.css';
+@import './styles/b4-editor.css';
+@import './styles/b5-ops.css';
+@import './styles/b6-system.css';
+
+/* Solaris Studio: "Solaris Cockpit, Noir finish".
+   Burgundy and gold on a deep wine-black edit bay, with gold hairlines,
+   wine-black glass and a static film grain.
+
+   Roles, so a component never has to pick a raw colour:
+   - abyss / sunken / base / surface / raised   the depths, darkest to lightest
+   - line / hairline          borders (line with /opacity; hairline is gold at 16%)
+   - accent / accent-strong   burgundy FILLS (primary buttons, active rows, tints).
+                              Too dark to be text on the background (2.3:1), so
+                              text on an accent fill uses on-accent.
+   - gold / gold-strong       HIGHLIGHT text and marks: links, the selected tab,
+                              focus rings, key numbers (9.7:1 on base).
+   - ink / muted              body text and secondary text
+   - success / warn / error   status only (always with an icon and a word)
+   - live                     on-air indicators only
+
+   Every text pairing here passes WCAG AA; most pass AAA. */
+@theme {
+  --color-base: #130a0d;
+  --color-surface: #1e1115;
+  --color-raised: #2e1a21;
+  --color-line: #4a2a34;
+  --color-accent: #8f2445;
+  --color-accent-strong: #a92f55;
+  --color-on-accent: #fff3f5;
+  --color-gold: #d8b263;
+  --color-gold-strong: #ecc87c;
+  --color-ink: #f6ede7;
+  --color-muted: #bba5a8;
+  --color-success: #74d39b;
+  --color-warn: #f2a65a;
+  --color-error: #f27a84;
+
+  --color-abyss: #0c0608;
+  --color-sunken: #0f080a;
+  --color-velvet: #3a1220;
+  --color-hairline: rgb(216 178 99 / 0.16);
+  --color-live: #e5484d;
+
+  --font-display: 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
+  --font-cine: 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Georgia, serif;
+  --font-mono: 'Cascadia Mono', Consolas, ui-monospace, monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+}
+
+:root {
+  --glass: rgb(38 18 24 / 0.62);
+  --glass-strong: rgb(30 17 21 / 0.86);
+  --glass-blur: blur(18px) saturate(1.2);
+  --glow-accent: 0 0 0 1px rgb(143 36 69 / 0.5), 0 8px 32px -8px rgb(143 36 69 / 0.55);
+  --glow-gold: 0 0 0 1px rgb(216 178 99 / 0.45), 0 0 24px -4px rgb(216 178 99 / 0.45);
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-2: 0 4px 12px -2px rgb(0 0 0 / 0.5), 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-3: 0 24px 48px -12px rgb(0 0 0 / 0.7), 0 8px 16px -8px rgb(60 10 25 / 0.6);
+  --inner-hi: inset 0 1px 0 rgb(255 255 255 / 0.045);
+  --grad-solar: linear-gradient(135deg, #f0d08a, #d8b263 40%, #a8743a);
+  --grad-foil: linear-gradient(105deg, #a8823c, #f3dc9a 45%, #d8b263 55%, #8a6a2e);
+  --grad-ember: linear-gradient(135deg, #8f2445, #5a1229);
+  --grad-velvet: radial-gradient(120% 100% at 0% 0%, #3a1220, #130a0d 70%);
+  --tint-success: rgb(116 211 155 / 0.12);
+  --tint-warn: rgb(242 166 90 / 0.12);
+  --tint-error: rgb(242 122 132 / 0.12);
+  --tint-gold: rgb(216 178 99 / 0.12);
+  --tint-accent: rgb(143 36 69 / 0.22);
+  --rail-w: 232px;
+  --rail-w-collapsed: 68px;
+  --topbar-h: 52px;
+  --muted-gold: color-mix(in srgb, var(--color-gold) 72%, var(--color-muted));
+}
+
+html {
+  color-scheme: dark;
+  /* Native checkboxes, radios, range sliders and progress bars. */
+  accent-color: var(--color-accent-strong);
+}
+
+body {
+  @apply text-ink antialiased;
+  background-color: var(--color-base);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  isolation: isolate;
+}
+/* Ambient light: a burgundy glow from the top-left and a faint gold one from
+   the bottom-right, on their own composited layer so the slow drift never
+   repaints the window. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: -8%;
+  z-index: -2;
+  pointer-events: none;
+  background-image:
+    radial-gradient(1200px 640px at 0% 0%, rgb(143 36 69 / 0.16), transparent 60%),
+    radial-gradient(900px 520px at 100% 100%, rgb(216 178 99 / 0.06), transparent 60%);
+  will-change: transform;
+}
+html:not([data-effects='reduced']) body::before {
+  animation: ambient-float 38s var(--ease-in-out) infinite alternate;
+}
+@keyframes ambient-float {
+  from { transform: translate3d(0, 0, 0) }
+  to { transform: translate3d(3%, 2.5%, 0) }
+}
+/* Static film grain: never animated; off under reduced effects and while the
+   Edit Bay video plays. */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  background-size: 160px 160px;
+}
+html[data-playing] body::after { display: none }
+#root { position: relative }
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+::selection {
+  background: rgb(143 36 69 / 0.6);
+  color: var(--color-on-accent);
+}
+
+/* Accessibility (WCAG 2.1 / AODA):
+   - visible keyboard focus on every interactive element (2.4.7), in gold
+     because burgundy is too dark to see against the background
+   - honor the user's reduced-motion preference (2.3.3) */
+:focus-visible {
+  outline: 2px solid var(--color-gold);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Thin warm scrollbars instead of the system grey. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line) transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-accent);
+}
+
+/* ---------- 1.3 typography scale (rem-based so appearance scaling works) ---------- */
+.t-micro {
+  font-size: 0.6875rem;
+  line-height: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 600;
+  color: var(--muted-gold);
+}
+.t-xs { font-size: 0.75rem; line-height: 1rem }
+.t-sm { font-size: 0.8125rem; line-height: 1.125rem }
+.t-base { font-size: 0.875rem; line-height: 1.25rem }
+.t-md { font-size: 1rem; line-height: 1.5rem; font-weight: 600 }
+.t-lg { font-size: 1.25rem; line-height: 1.75rem; font-family: var(--font-display); font-weight: 600; letter-spacing: -0.005em }
+.t-xl { font-size: 1.75rem; line-height: 2.125rem; font-family: var(--font-display); font-weight: 700; letter-spacing: -0.01em }
+.t-hero { font-size: 2.5rem; line-height: 2.75rem; font-family: var(--font-cine); font-weight: 600; letter-spacing: -0.01em }
+.t-kpi { font-size: 2rem; line-height: 2.25rem; font-family: var(--font-cine); font-variant-numeric: tabular-nums; font-weight: 600 }
+.t-mono { font-size: 0.75rem; line-height: 1rem; font-family: var(--font-mono); font-variant-numeric: tabular-nums }
+
+/* ---------- 1.4 surfaces ----------
+   Tailwind v4: custom classes can't @apply each other, so shared bits are
+   repeated. These stay unlayered (as before) so existing `!` overrides in
+   pages keep behaving exactly the same. */
+.card {
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-surface) 88%, transparent);
+  border: 1px solid var(--color-hairline);
+  box-shadow: var(--inner-hi), var(--shadow-2);
+  padding: 1rem;
+}
+html[data-density='compact'] .card { padding: 0.75rem }
+.card-interactive {
+  cursor: pointer;
+  transition:
+    transform var(--dur-2) var(--ease-out),
+    box-shadow var(--dur-2) var(--ease-out),
+    border-color var(--dur-2);
+}
+.card-interactive:hover {
+  transform: translateY(-2px);
+  border-color: rgb(216 178 99 / 0.38);
+  box-shadow: var(--inner-hi), var(--shadow-3), var(--glow-gold);
+}
+.card-glass {
+  background: var(--glass);
+  backdrop-filter: var(--glass-blur);
+}
+.card-hero {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(color-mix(in srgb, var(--color-surface) 92%, var(--color-velvet)), var(--color-surface)) padding-box,
+    conic-gradient(from var(--angle), rgb(216 178 99 / 0.15), var(--color-gold-strong) 20%, rgb(169 47 85 / 0.8) 35%, rgb(216 178 99 / 0.15) 50%, rgb(216 178 99 / 0.15)) border-box;
+  animation: angle 10s linear infinite;
+}
+.card-glow {
+  box-shadow: var(--inner-hi), var(--glow-accent);
+  border-color: rgb(169 47 85 / 0.55);
+}
+.card-sunken {
+  background: var(--color-abyss);
+  box-shadow: inset 0 1px 3px rgb(0 0 0 / 0.5);
+  border-color: rgb(216 178 99 / 0.08);
+}
+html[data-effects='reduced'] .card-hero { animation: none }
+
+.btn-accent {
+  @apply px-4 py-2 rounded-lg font-medium disabled:opacity-40 disabled:cursor-not-allowed text-on-accent;
+  background-color: var(--color-accent);
+  background-image: linear-gradient(180deg, rgb(236 200 124 / 0.12), transparent 55%);
+  box-shadow:
+    inset 0 1px 0 rgb(236 200 124 / 0.28),
+    0 1px 2px rgb(0 0 0 / 0.4);
+  transition:
+    background-color var(--dur-2) var(--ease-out),
+    box-shadow var(--dur-2) var(--ease-out),
+    transform var(--dur-1) var(--ease-out);
+}
+.btn-accent:hover:not(:disabled) {
+  background-color: var(--color-accent-strong);
+  box-shadow: inset 0 1px 0 rgb(236 200 124 / 0.32), var(--glow-accent);
+}
+.btn-gold {
+  @apply px-4 py-2 rounded-lg font-semibold disabled:opacity-40 disabled:cursor-not-allowed;
+  color: var(--color-base);
+  background-color: var(--color-gold);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.35), 0 2px 10px -2px rgb(216 178 99 / 0.35);
+  transition:
+    box-shadow var(--dur-2) var(--ease-out),
+    transform var(--dur-1) var(--ease-out),
+    filter var(--dur-2);
+}
+.btn-gold:hover:not(:disabled) {
+  filter: brightness(1.06);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.4), var(--glow-gold);
+}
+.btn-ghost {
+  @apply px-4 py-2 rounded-lg font-medium disabled:opacity-40 disabled:cursor-not-allowed text-ink;
+  background-color: color-mix(in srgb, var(--color-raised) 70%, transparent);
+  border: 1px solid var(--color-hairline);
+  transition:
+    border-color var(--dur-2) var(--ease-out),
+    color var(--dur-2) var(--ease-out),
+    background-color var(--dur-2),
+    transform var(--dur-1) var(--ease-out);
+}
+.btn-ghost:hover:not(:disabled) {
+  border-color: rgb(216 178 99 / 0.55);
+  color: var(--color-gold-strong);
+  background-color: var(--color-raised);
+}
+.btn-subtle {
+  @apply px-3 py-1.5 rounded-lg font-medium disabled:opacity-40 disabled:cursor-not-allowed text-muted;
+  background: transparent;
+  transition:
+    background-color var(--dur-2),
+    color var(--dur-2),
+    transform var(--dur-1) var(--ease-out);
+}
+.btn-subtle:hover:not(:disabled) {
+  background-color: var(--tint-gold);
+  color: var(--color-ink);
+}
+.btn-danger {
+  @apply px-4 py-2 rounded-lg font-medium disabled:opacity-40 disabled:cursor-not-allowed text-error;
+  background-color: var(--tint-error);
+  border: 1px solid rgb(242 122 132 / 0.3);
+  transition:
+    background-color var(--dur-2),
+    border-color var(--dur-2),
+    transform var(--dur-1) var(--ease-out);
+}
+.btn-danger:hover:not(:disabled) {
+  background-color: rgb(242 122 132 / 0.2);
+  border-color: rgb(242 122 132 / 0.6);
+}
+.btn-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  color: var(--color-muted);
+  background: transparent;
+  position: relative;
+  transition:
+    background-color var(--dur-2),
+    color var(--dur-2),
+    transform var(--dur-1) var(--ease-out);
+}
+.btn-icon:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--color-raised) 80%, transparent);
+  color: var(--color-ink);
+}
+.btn-icon:disabled { opacity: 0.35; cursor: not-allowed }
+.btn-icon[aria-pressed='true'],
+.btn-icon[data-active='true'] {
+  color: var(--color-gold-strong);
+  background-color: var(--tint-accent);
+}
+
+/* Disabled matches the buttons above: a field that cannot be used has to
+   look it, or "greyed out until it applies" reads as broken. */
+.input {
+  @apply text-ink px-3 py-2 w-full outline-none placeholder:text-muted/60 disabled:opacity-40 disabled:cursor-not-allowed;
+  background-color: var(--color-abyss);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-hairline);
+  transition:
+    border-color var(--dur-2) var(--ease-out),
+    box-shadow var(--dur-2) var(--ease-out);
+}
+.input:hover:not(:disabled):not(:focus) { border-color: rgb(216 178 99 / 0.3) }
+.input:focus,
+.input:focus-visible {
+  border-color: var(--color-gold);
+  box-shadow: 0 0 0 3px rgb(216 178 99 / 0.18);
+  outline: none;
+}
+.input[aria-invalid='true'] {
+  border-color: var(--color-error);
+  box-shadow: 0 0 0 3px rgb(242 122 132 / 0.15);
+}
+select.input option { background: var(--color-surface) }
+.label {
+  font-size: 0.6875rem;
+  line-height: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 600;
+  color: var(--muted-gold);
+}
+/* The one ornament: a short foil bar under a page title. */
+.gold-rule {
+  width: 40px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--grad-foil);
+}
+
+/* ---------- utilities ---------- */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.glass {
+  background: var(--glass);
+  backdrop-filter: var(--glass-blur);
+}
+.hairline { border: 1px solid var(--color-hairline) }
+.text-foil {
+  background: var(--grad-foil);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.tabular { font-variant-numeric: tabular-nums }
+.scrim-bottom {
+  background: linear-gradient(to top, rgb(12 6 8 / 0.92), rgb(12 6 8 / 0.55) 45%, transparent);
+}
+.icon-gold { stroke: url(#solaris-gold) }
+
+/* Scroll containers that navigate by gesture (timeline pan/zoom) — no
+   grabbable scrollbar that could be mistaken for an editing control. */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

@@ -1,0 +1,52 @@
+PackageIdentifier: Arch-Axgel.SolarisStudio
+PackageVersion: 2.0.0
+PackageLocale: en-US
+Publisher: Arch-Axgel
+PublisherUrl: https://github.com/Arch-Axgel
+PublisherSupportUrl: https://github.com/Arch-Axgel/solaris-studio/issues
+PrivacyUrl: https://arch-axgel.github.io/solaris-studio/privacy.html
+Author: Arch-Axgel
+PackageName: Solaris Studio
+PackageUrl: https://arch-axgel.github.io/solaris-studio/
+License: AGPL-3.0-or-later
+LicenseUrl: https://github.com/Arch-Axgel/solaris-studio/blob/main/LICENSE
+Copyright: Copyright (c) 2026 ColinGPT9
+ShortDescription: Turn long videos into vertical clips using AI that runs on your own PC.
+Description: |-
+  Solaris Studio finds the best moments in a long video and cuts them into vertical
+  clips for Shorts, TikTok and Reels. It works from a YouTube, Twitch or Kick link,
+  or from a video file on your disk.
+
+  Everything runs locally. Transcription, moment scoring, speaker tracking,
+  subtitles and rendering all happen on your own machine, so your footage is never
+  uploaded to a service, there is no subscription, and there is no monthly clip
+  limit. The language model runs through Ollama and you choose which one.
+
+  It also translates, subtitles and dubs clips into 19 languages, follows the
+  active speaker so a talking head stays in frame, and learns a creator's recurring
+  jokes and catchphrases to score their moments better.
+
+  Alpha software: it works, it is rough in places, and the known issues are listed
+  in the repository.
+Moniker: solaris-studio
+Tags:
+  - ai
+  - video
+  - video-editing
+  - shorts
+  - clips
+  - twitch
+  - youtube
+  - kick
+  - subtitles
+  - local-ai
+  - open-source
+  - content-creation
+ReleaseNotesUrl: https://github.com/Arch-Axgel/solaris-studio/releases/tag/v2.0.0
+Documentation:
+  - DocumentLabel: Known issues
+    DocumentUrl: https://github.com/Arch-Axgel/solaris-studio/blob/main/KNOWN-ISSUES.md
+  - DocumentLabel: Changelog
+    DocumentUrl: https://github.com/Arch-Axgel/solaris-studio/blob/main/CHANGELOG.md
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

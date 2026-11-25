@@ -1,0 +1,17 @@
+/* Shared primitives (spec 6.4). Import from this barrel:
+   import { Button, Dialog, toast } from '../components/ui' */
+export { Button, IconButton, HoldButton, type ButtonVariant } from './Button'
+export { Card } from './Card'
+export { PageHeader, SectionHeader } from './PageHeader'
+export { Dialog } from './Dialog'
+export { Sheet } from './Sheet'
+export { ConfirmProvider, useConfirm, confirmDialog, type ConfirmOptions } from './Confirm'
+export { ToastProvider, Toaster, toast, type ToastOpts } from './Toast'
+export { Toggle } from './Toggle'
+export { Tabs, Segmented, type TabItem } from './Tabs'
+export { Badge, StatusChip, type Tone } from './Badge'
+export { ProgressBar, ProgressRing, StepProgress } from './Progress'
+export { Skeleton, EmptyState, Callout, Disclosure } from './Feedback'
+export { Tooltip } from './Tooltip'
+export { Popover, MenuButton } from './Popover'
+export { Kbd, Avatar, Sparkline, Meter, CountUp, Field, SearchInput, Term } from './Misc'
