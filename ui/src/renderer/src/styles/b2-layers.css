@@ -114,15 +114,17 @@ dialog.lyr-palette::backdrop { background: rgb(12 6 8 / 0.55) }
 .lyr-palette .ui-dialog-content { padding: 0; overflow: hidden; display: flex; flex-direction: column; flex: 1; min-height: 0 }
 .lyr-palette .ui-dialog-x { display: none }
 
+/* Sized by its content up to a cap: one result is a short box, not 400px of
+   empty glass. The floor keeps it from jumping wildly while typing, and is
+   taller with the preview pane so the poster/stats have room. */
 .lyr-pal {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  min-height: 0;
-  flex: 0 0 auto;
-  height: min(560px, calc(78vh - 2px));
+  display: flex;
+  min-height: min(240px, calc(78vh - 2px));
+  max-height: min(560px, calc(78vh - 2px));
+  flex: 0 1 auto;
 }
-.lyr-pal[data-preview='true'] { grid-template-columns: minmax(0, 1fr) 300px }
-.lyr-pal-main { display: flex; flex-direction: column; min-height: 0; min-width: 0 }
+.lyr-pal[data-preview='true'] { min-height: min(400px, calc(78vh - 2px)) }
+.lyr-pal-main { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0 }
 
 .lyr-pal-bar {
   position: relative;
@@ -183,10 +185,12 @@ dialog.lyr-palette::backdrop { background: rgb(12 6 8 / 0.55) }
 button.lyr-pal-scope { cursor: pointer }
 button.lyr-pal-scope:hover { background: rgb(216 178 99 / 0.2) }
 .lyr-pal-indexing { display: inline-flex; align-items: center }
-.lyr-pal-esc { opacity: 0.6 }
+.lyr-pal-esc { opacity: 0.85 }
+.lyr-pal-scope-x { opacity: 0.6; margin-left: 1px }
+button.lyr-pal-scope:hover .lyr-pal-scope-x { opacity: 1 }
 
 .lyr-pal-list {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -208,10 +212,11 @@ button.lyr-pal-scope:hover { background: rgb(216 178 99 / 0.2) }
   box-sizing: border-box;
 }
 .lyr-pal-count {
-  font-size: 0.62rem;
+  font-size: 0.68rem;
+  font-weight: 600;
   letter-spacing: 0;
+  text-transform: none;
   color: var(--color-muted);
-  opacity: 0.7;
 }
 .lyr-pal-row {
   position: relative;
@@ -327,13 +332,21 @@ button.lyr-pal-scope:hover { background: rgb(216 178 99 / 0.2) }
 .lyr-pal-foot > span { display: inline-flex; align-items: center; gap: 5px }
 .lyr-pal-foot .ui-kbd { height: 18px; min-width: 18px; font-size: 0.64rem }
 .lyr-pal-prefixes { margin-left: auto; gap: 4px !important }
+/* The lower-value hints give way to the preview pane, so the footer stays
+   one row instead of pushing the scope filters onto a second line. */
+.lyr-pal-foot { flex-wrap: nowrap; min-height: 42px; gap: 12px; overflow: hidden }
+.lyr-pal-foot > span { flex-shrink: 0 }
 .lyr-pal-prefix {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 26px;
   border: 0;
   background: transparent;
   color: var(--color-muted);
-  font-size: 0.68rem;
-  padding: 2px 6px;
-  border-radius: 6px;
+  font-size: 0.7rem;
+  padding: 0 7px;
+  border-radius: 7px;
   cursor: pointer;
   transition: color var(--dur-2), background var(--dur-2);
 }
@@ -343,9 +356,17 @@ button.lyr-pal-scope:hover { background: rgb(216 178 99 / 0.2) }
 @media (max-width: 860px) {
   .lyr-pal-prefixes { display: none !important }
 }
+@media (max-width: 1100px) {
+  .lyr-pal-foot-extra { display: none !important }
+}
 
 /* preview */
 .lyr-pal-preview {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 300px;
+  flex-shrink: 0;
   border-left: 1px solid var(--color-hairline);
   background:
     radial-gradient(120% 60% at 50% 0%, rgb(143 36 69 / 0.18), transparent 70%),
@@ -704,10 +725,12 @@ dialog.ui-sheet.lyr-help-sheet .ui-sheet-body {
    ========================================================================= */
 .lyr-assistant {
   position: fixed;
-  top: 0;
+  /* Below the top bar, like the docked sheets (shell.css), so the bar's
+     Activity / Help / Assistant buttons stay visible and clickable. */
+  top: var(--topbar-h, 52px);
   right: 0;
   bottom: 0;
-  z-index: 55;
+  z-index: var(--z-drawer, 55);
   width: min(440px, 100vw);
   display: flex;
   flex-direction: column;
@@ -733,7 +756,8 @@ dialog.ui-sheet.lyr-help-sheet .ui-sheet-body {
     box-shadow var(--dur-3);
 }
 @media (min-width: 1440px) {
-  .lyr-assistant[data-pinned='true'] { box-shadow: none; z-index: 40 }
+  /* Docked: it has its own grid column beside the top bar, so full height. */
+  .lyr-assistant[data-pinned='true'] { box-shadow: none; z-index: 40; top: 0 }
 }
 .lyr-asst-glow {
   position: absolute;
@@ -800,7 +824,53 @@ dialog.ui-sheet.lyr-help-sheet .ui-sheet-body {
   border-color: rgb(74 42 52 / 0.6);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.03);
 }
-.lyr-asst-host > section.card > p:first-child { display: none }
+.lyr-asst-host { position: relative }
+.lyr-assistant:focus { outline: none }
+/* The drawer header already names it; drop the card's own title (both the
+   ready layout, where it sits in a row with the raw model slug, and the
+   not-ready one, where it is the first paragraph). */
+.lyr-asst-host > section.card > p:first-child,
+.lyr-asst-host > section.card > div:first-child:has(> p.font-semibold) { display: none }
+.lyr-asst-host > section.card > div:first-child:has(> p.font-semibold) + div { margin-top: 0 }
+/* Its empty-state "Try:" chips repeat the drawer's own; .lyr-asst-empty
+   explains the box instead. */
+.lyr-asst-host > section.card > .overflow-y-auto > .flex-wrap:only-child { display: none }
+.lyr-asst-empty {
+  display: none;
+  position: absolute;
+  inset: 10px 14px 74px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 24px;
+  text-align: center;
+  pointer-events: none;
+  animation: fade-in var(--dur-4) var(--ease-out) both;
+}
+.lyr-asst-host:has(> section.card > .overflow-y-auto > .flex-wrap:only-child) > .lyr-asst-empty { display: flex }
+.lyr-asst-empty p { max-width: 30ch }
+.lyr-asst-empty-mark {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 6px;
+  border-radius: 50%;
+  color: var(--color-gold);
+  background: radial-gradient(circle, rgb(216 178 99 / 0.16), rgb(216 178 99 / 0.04) 70%);
+  border: 1px solid rgb(216 178 99 / 0.22);
+}
+.lyr-asst-model {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  margin-top: 4px;
+  font-size: 0.7rem;
+  color: var(--color-muted);
+}
+.lyr-asst-model svg { color: var(--color-gold); flex-shrink: 0 }
 .lyr-asst-host input.input { height: 40px }
 /* the assistant's step trace staggers in */
 .assistant-drawer ol > li,
@@ -843,7 +913,12 @@ dialog.ui-sheet.lyr-help-sheet .ui-sheet-body {
   max-width: 100%;
 }
 .lyr-help-pick select option { background: var(--color-surface); color: var(--color-ink) }
-.lyr-help-pick select:focus-visible { outline: 2px solid var(--color-gold); outline-offset: 3px; border-radius: 4px }
+.lyr-help-for { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding-top: 2px }
+.lyr-help-pick select { line-height: 1.3; border-radius: 6px; min-height: 28px }
+.lyr-help-pick select:focus { outline: none }
+.lyr-help-pick select:focus-visible { outline: 2px solid var(--color-gold); outline-offset: 2px; border-radius: 6px }
+.lyr-help-pick:hover select { color: var(--color-gold-strong) }
+.lyr-help:focus { outline: none }
 .lyr-help-pick svg { position: absolute; right: 0; pointer-events: none; color: var(--color-gold) }
 .lyr-help { display: flex; flex-direction: column; gap: 22px }
 .lyr-help-hero {
@@ -914,18 +989,16 @@ dialog.ui-sheet.lyr-help-sheet .ui-sheet-body {
 .lyr-help-search > svg { position: absolute; left: 10px; color: var(--color-muted); pointer-events: none }
 .lyr-help-search .input { width: 100%; padding-left: 32px }
 .lyr-help-terms { display: flex; flex-direction: column; gap: 2px; margin: 4px 0 0 }
+/* Plain definitions: nothing here is clickable, so nothing looks like a link. */
 .lyr-help-term {
   padding: 9px 10px;
-  border-radius: 10px;
-  transition: background var(--dur-2);
+  border-bottom: 1px solid rgb(74 42 52 / 0.35);
 }
-.lyr-help-term:hover { background: rgb(46 26 33 / 0.55) }
+.lyr-help-term:last-child { border-bottom: 0 }
 .lyr-help-term dt {
   font-size: 0.82rem;
   font-weight: 600;
-  color: var(--color-gold-strong);
-  text-decoration: underline dotted rgb(216 178 99 / 0.5);
-  text-underline-offset: 3px;
+  color: var(--color-ink);
 }
 .lyr-help-term dd { margin: 3px 0 0; font-size: 0.78rem; color: var(--color-muted); line-height: 1.5 }
 .lyr-help-links { display: grid; grid-template-columns: 1fr 1fr; gap: 8px }
@@ -954,12 +1027,48 @@ dialog.ui-sheet.lyr-help-sheet .ui-sheet-body {
 .lyr-keys-search { position: relative; display: flex; align-items: center; margin-bottom: 14px }
 .lyr-keys-search > svg { position: absolute; left: 11px; color: var(--color-muted); pointer-events: none }
 .lyr-keys-search .input { width: 100%; padding-left: 34px }
+/* Two balanced columns: Anywhere + Getting around (12 rows) beside Jump to
+   a page (11 rows), instead of a short column next to a long one. One column
+   when narrow, or when a filter leaves a single group. */
 .lyr-keys-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 14px 20px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas: 'global pages' 'nav pages';
+  grid-template-rows: auto 1fr;
+  gap: 14px 24px;
 }
-.lyr-keys-group:last-of-type { grid-column: 1 / -1 }
+.lyr-keys-group[data-group='Global'] { grid-area: global }
+.lyr-keys-group[data-group='Navigation'] { grid-area: nav }
+.lyr-keys-group[data-group='Pages'] { grid-area: pages }
+.lyr-keys-grid:not(:has([data-group='Pages'])),
+.lyr-keys-grid:not(:has([data-group='Global'], [data-group='Navigation'])) {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: none;
+}
+.lyr-keys-grid:not(:has([data-group='Pages'])) > .lyr-keys-group,
+.lyr-keys-grid:not(:has([data-group='Global'], [data-group='Navigation'])) > .lyr-keys-group { grid-area: auto }
+@media (max-width: 760px) {
+  .lyr-keys-grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: none; grid-template-rows: none }
+  .lyr-keys-grid > .lyr-keys-group { grid-area: auto }
+}
+/* A fade at the bottom edge while there is more to scroll, so a row sliced
+   by the edge reads as "more below" (scroll-driven; no fade when it fits). */
+@property --lyr-fade {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+.lyr-keys .ui-dialog-content {
+  -webkit-mask-image: linear-gradient(#000 calc(100% - var(--lyr-fade)), transparent);
+  mask-image: linear-gradient(#000 calc(100% - var(--lyr-fade)), transparent);
+  animation: lyr-fade-end linear both;
+  animation-timeline: scroll(self);
+}
+@keyframes lyr-fade-end {
+  from { --lyr-fade: 36px }
+  92% { --lyr-fade: 36px }
+  to { --lyr-fade: 0px }
+}
 .lyr-keys-h {
   display: flex;
   align-items: center;
@@ -972,7 +1081,7 @@ dialog.ui-sheet.lyr-help-sheet .ui-sheet-body {
   margin-bottom: 8px;
 }
 .lyr-keys-group ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px }
-.lyr-keys-group:last-of-type ul { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); column-gap: 18px }
+
 .lyr-keys-group li {
   display: flex;
   align-items: center;
@@ -1076,22 +1185,30 @@ html[data-effects='reduced'] .lyr-new-rays { animation: none }
   gap: 12px;
   padding: 14px 20px 18px 26px;
 }
-.lyr-new-dots { display: flex; gap: 6px }
+.lyr-new-dots { display: flex; gap: 0; margin-left: -8px }
+/* An 8px dot inside a 24px hit area: the padding is clickable, the
+   background is painted on the content box only. */
 .lyr-new-dot {
+  box-sizing: content-box;
   width: 8px;
   height: 8px;
-  padding: 0;
+  padding: 8px;
   border: 0;
   border-radius: 999px;
   background: rgb(187 165 168 / 0.3);
+  background-clip: content-box;
   cursor: pointer;
   transition:
     width var(--dur-3) var(--ease-spring),
     background var(--dur-3);
 }
-.lyr-new-dot[aria-selected='true'] { width: 26px; background: var(--grad-solar) }
-.lyr-new-dot:focus-visible { outline: 2px solid var(--color-gold); outline-offset: 2px }
-.lyr-new-btns { display: flex; gap: 8px }
+.lyr-new-dot:hover:not([aria-selected='true']) { background-color: rgb(216 178 99 / 0.55) }
+.lyr-new-dot[aria-selected='true'] { width: 26px; background: var(--grad-solar); background-clip: content-box }
+.lyr-new-dot:focus-visible { outline: 2px solid var(--color-gold); outline-offset: -4px }
+.lyr-new-btns { display: flex; align-items: center; gap: 8px }
+.lyr-new-copies { display: grid }
+.lyr-new-copies > .lyr-new-copy { grid-area: 1 / 1; min-height: 0 }
+.lyr-new-sizer { visibility: hidden; animation: none; pointer-events: none }
 
 /* =========================================================================
    Tour
@@ -1227,3 +1344,250 @@ html[data-effects='reduced'] .lyr-tour-card {
   margin: 0 0 12px;
   animation: rise var(--dur-3) var(--ease-out-expo) both;
 }
+
+/* =========================================================================
+   Feedback Hub (components/FeedbackHub.tsx)
+   ========================================================================= */
+.fb-chooser { display: flex; flex-direction: column; gap: 14px }
+.fb-kinds { display: flex; flex-direction: column; gap: 10px }
+.fb-kind {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 14px;
+  text-align: left;
+  color: var(--color-ink);
+  background: rgb(30 17 21 / 0.7);
+  border: 1px solid rgb(74 42 52 / 0.7);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-2),
+    background-color var(--dur-2),
+    transform var(--dur-2) var(--ease-out),
+    box-shadow var(--dur-2);
+}
+.fb-kind:hover {
+  border-color: rgb(216 178 99 / 0.42);
+  background: rgb(46 26 33 / 0.75);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 26px -18px rgb(0 0 0 / 0.9);
+}
+.fb-kind:active { transform: translateY(0) scale(0.995) }
+.fb-kind:focus-visible { outline: 2px solid var(--color-gold); outline-offset: 2px }
+.fb-kind-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  flex-shrink: 0;
+  color: var(--color-gold);
+  background: var(--tint-gold, rgb(216 178 99 / 0.12));
+  border: 1px solid rgb(216 178 99 / 0.18);
+}
+.fb-kind-title { display: block; font-weight: 600; font-size: 0.92rem }
+.fb-kind-blurb { display: block; font-size: 0.78rem; color: var(--color-muted); margin-top: 2px }
+.fb-kind-chev { color: var(--color-muted); transition: transform var(--dur-2) var(--ease-out), color var(--dur-2) }
+.fb-kind:hover .fb-kind-chev { color: var(--color-gold); transform: translateX(3px) }
+
+.fb-form { display: flex; flex-direction: column; gap: 16px; animation: rise var(--dur-3) var(--ease-out-expo) both }
+.fb-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin: 0; padding: 0; border: 0 }
+.fb-q {
+  display: block;
+  padding: 0;
+  font-size: 0.85rem;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--color-ink);
+}
+.fb-req { color: var(--color-gold) }
+legend.fb-q { margin-bottom: 8px }
+.fb-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; align-items: end }
+@media (max-width: 640px) { .fb-pair { grid-template-columns: 1fr } }
+.fb-field textarea.input { min-height: 64px; line-height: 1.45 }
+.fb-chips { display: flex; flex-wrap: wrap; gap: 6px }
+.fb-chips .lyr-chip { white-space: normal; text-align: left; height: auto; min-height: 30px; padding-block: 4px }
+
+.fb-shots { display: flex; align-items: center; flex-wrap: wrap; gap: 8px }
+.fb-shot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  height: 30px;
+  padding: 0 4px 0 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  color: var(--color-ink);
+  background: rgb(46 26 33 / 0.6);
+  border: 1px solid rgb(74 42 52 / 0.8);
+}
+.fb-shot > svg { color: var(--color-gold); flex-shrink: 0 }
+.fb-shot-x {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  color: var(--color-muted);
+  transition: color var(--dur-2), background-color var(--dur-2);
+}
+.fb-shot-x:hover { color: var(--color-error); background: var(--tint-error) }
+
+.fb-diag {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgb(12 6 8 / 0.35);
+  border: 1px solid var(--color-hairline);
+}
+.fb-diag-check { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; font-size: 0.84rem; line-height: 1.45; color: var(--color-ink) }
+.fb-diag-check input { margin-top: 1px; flex-shrink: 0 }
+.fb-diag-peek { margin-left: 28px }
+.fb-diag-pre {
+  align-self: stretch;
+  margin: 0;
+  max-height: 12rem;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--color-muted);
+  background: var(--color-base);
+  border: 1px solid var(--color-hairline);
+}
+
+.fb-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; width: 100% }
+.fb-foot-btns { display: flex; gap: 8px; margin-left: auto; flex-shrink: 0 }
+.fb-missing {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  flex: 1 1 240px;
+  min-width: 0;
+  font-size: 0.76rem;
+  line-height: 1.4;
+  color: var(--color-muted);
+}
+.fb-missing > svg { color: var(--color-gold); margin-top: 1px; flex-shrink: 0 }
+.fb-missing > span {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.fb-done { display: flex; align-items: center; gap: 14px; padding: 8px 0 }
+.fb-done-mark {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  color: var(--color-success);
+  background: var(--tint-success);
+  box-shadow: 0 0 0 8px rgb(110 207 151 / 0.06);
+}
+
+/* =========================================================================
+   Update strip (components/UpdateBanner.tsx). .update-banner (shell.css)
+   gives it its z-index; this is the look.
+   ========================================================================= */
+.lyr-upd {
+  width: 100%;
+  border-bottom: 1px solid var(--color-hairline);
+  background:
+    linear-gradient(90deg, rgb(143 36 69 / 0.28), rgb(143 36 69 / 0.08) 55%, transparent),
+    var(--color-surface);
+}
+.lyr-upd[data-tone='gold'] {
+  background:
+    linear-gradient(90deg, rgb(216 178 99 / 0.18), rgb(143 36 69 / 0.1) 55%, transparent),
+    var(--color-surface);
+}
+.lyr-upd-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 8px 16px;
+  min-height: 48px;
+}
+.lyr-upd-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  flex-shrink: 0;
+  color: var(--color-gold);
+  background: var(--tint-gold);
+  border: 1px solid rgb(216 178 99 / 0.2);
+}
+.lyr-upd-text { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 12px; flex: 1 1 260px; min-width: 0 }
+.lyr-upd-title { font-size: 0.86rem; font-weight: 600; color: var(--color-ink) }
+.lyr-upd-sub { font-size: 0.76rem; color: var(--color-muted); line-height: 1.4 }
+.lyr-upd-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-shrink: 0 }
+.lyr-upd-progress { display: flex; align-items: center; gap: 10px; width: min(420px, 60vw) }
+.lyr-upd-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0 8px;
+  margin: -4px 0 -4px -8px;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--color-gold);
+  transition: background-color var(--dur-2), color var(--dur-2);
+}
+.lyr-upd-link:hover { color: var(--color-gold-strong); background: rgb(216 178 99 / 0.1) }
+.lyr-upd-link svg { transition: transform var(--dur-2) var(--ease-out) }
+.lyr-upd-notes {
+  margin: 0 16px 12px 60px;
+  max-height: 12rem;
+  overflow-y: auto;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  white-space: pre-line;
+  color: var(--color-ink);
+  background: rgb(12 6 8 / 0.45);
+  border: 1px solid var(--color-hairline);
+}
+@media (max-width: 900px) {
+  .lyr-upd-actions { flex-basis: 100%; justify-content: flex-end; padding-left: 44px }
+  .lyr-upd-progress { width: 100% }
+  .lyr-upd-notes { margin-left: 16px }
+}
+
+/* YouTube connect (components/YouTubeConnect.tsx): the "Checking…" block is
+   focused for screen readers, not selected; no ring on that programmatic focus. */
+.yt-connect-quiet:focus,
+.yt-connect-quiet:focus-visible { outline: none }
+.lyr-pal-preview > .lyr-prev,
+.lyr-pal-preview > .lyr-prev-idle { flex: 1 1 auto; height: auto; min-height: 0 }
+.lyr-pal-preview-tip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 12px 12px;
+  font-size: 0.68rem;
+  color: var(--color-muted);
+  flex-shrink: 0;
+}
+.lyr-pal-preview-tip .ui-kbd { height: 18px; min-width: 18px; font-size: 0.64rem }

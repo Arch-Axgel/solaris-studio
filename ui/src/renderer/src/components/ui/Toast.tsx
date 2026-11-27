@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { createPortal } from 'react-dom'
 import { Icon, type IconName } from '../icons'
 import { t } from '../../lib/i18n'
 import { cx } from './position'
@@ -193,12 +194,101 @@ function ToastCard({ item, paused }: { item: ToastItem; paused: boolean }): JSX.
   )
 }
 
-/** Bottom-right stack. Hovering pauses every timer. */
-export function Toaster(): JSX.Element {
+/** The element the toaster must live in to stay visible AND clickable: the
+ *  most recently opened modal <dialog> (everything outside a modal dialog is
+ *  inert), else <body>. Tracked through the `open` attribute, which
+ *  showModal()/close() toggle. */
+function useToastHost(): [HTMLElement | null, () => void] {
+  const [host, setHost] = useState<HTMLElement | null>(null)
+  const repick = useRef<() => void>(() => undefined)
+  useEffect(() => {
+    const stack: HTMLDialogElement[] = []
+    const pick = (): void => {
+      for (const d of Array.from(document.querySelectorAll('dialog[open]')) as HTMLDialogElement[])
+        if (!stack.includes(d)) stack.push(d)
+      for (let i = stack.length - 1; i >= 0; i--) {
+        const d = stack[i]
+        if (!d.isConnected || !d.open) stack.splice(i, 1)
+      }
+      const modal = [...stack].reverse().find((d) => {
+        try {
+          return d.matches(':modal')
+        } catch {
+          return false
+        }
+      })
+      setHost(modal ?? document.body)
+    }
+    const mo = new MutationObserver((records) => {
+      for (const r of records) {
+        const d = r.target as HTMLDialogElement
+        if (d.tagName === 'DIALOG' && d.open) {
+          const i = stack.indexOf(d)
+          if (i >= 0) stack.splice(i, 1)
+          stack.push(d)
+        }
+      }
+      pick()
+    })
+    mo.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['open'] })
+    pick()
+    repick.current = pick
+    return () => mo.disconnect()
+  }, [])
+  // A dialog unmounted while still open (its parent went away) never toggles
+  // `open`, so the observer misses it: re-pick when the host has left the DOM.
+  return [host, () => repick.current()]
+}
+
+// React 18's types don't know the popover attribute yet; React passes it on.
+const POPOVER_MANUAL = { popover: 'manual' } as Record<string, string>
+
+/** Bottom-right stack. Hovering pauses every timer. A manual popover in the
+ *  top layer, so toasts show above sheets and modal dialogs (and stay
+ *  clickable: it moves into the topmost modal dialog while one is open). */
+export function Toaster(): JSX.Element | null {
   const list = useSyncExternalStore(subscribe, () => items, () => items)
   const [paused, setPaused] = useState(false)
-  return (
+  const [host, repickHost] = useToastHost()
+  const ref = useRef<HTMLElement>(null)
+  const empty = list.length === 0
+  useLayoutEffect(() => {
+    if (host && !host.isConnected) repickHost()
+  })
+  useLayoutEffect(() => {
+    const el = ref.current as (HTMLElement & { showPopover?: () => void; hidePopover?: () => void }) | null
+    if (!el || typeof el.showPopover !== 'function') return
+    try {
+      if (empty) {
+        if (el.matches(':popover-open')) el.hidePopover?.()
+      } else if (!el.matches(':popover-open')) el.showPopover()
+    } catch {
+      /* detached */
+    }
+  }, [host, empty])
+  // Publish the stack's height so an open command palette can stop short of
+  // it instead of being covered (shell.css, "Toasts beside the palette").
+  useLayoutEffect(() => {
+    const el = ref.current
+    const root = document.documentElement
+    if (!el || empty) {
+      root.style.removeProperty('--toast-stack-h')
+      return
+    }
+    const set = (): void => root.style.setProperty('--toast-stack-h', `${Math.ceil(el.getBoundingClientRect().height)}px`)
+    set()
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(set) : null
+    ro?.observe(el)
+    return () => {
+      ro?.disconnect()
+      root.style.removeProperty('--toast-stack-h')
+    }
+  }, [host, empty])
+  if (!host) return null
+  return createPortal(
     <section
+      ref={ref}
+      {...POPOVER_MANUAL}
       className="ui-toaster"
       aria-label={t('Notifications')}
       onMouseEnter={() => setPaused(true)}
@@ -209,6 +299,7 @@ export function Toaster(): JSX.Element {
       {list.map((item) => (
         <ToastCard key={item.id} item={item} paused={paused} />
       ))}
-    </section>
+    </section>,
+    host
   )
 }

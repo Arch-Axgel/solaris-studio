@@ -56,10 +56,10 @@ export default function WatchPlatformOptions({
   }
 
   const select = (platform: string, key: string, choices: Choice[], label: string): JSX.Element => (
-    <label className="text-sm flex items-center gap-2">
-      <span className="text-muted">{t(label)}</span>
+    <label className="ops-field-inline">
+      <span className="text-sm text-muted">{t(label)}</span>
       <select
-        className="input !w-40 !py-1"
+        className="input !w-auto min-w-40"
         value={str(platform, key, choices[0].value)}
         onChange={(e) => set(platform, key, e.target.value)}
       >
@@ -72,10 +72,9 @@ export default function WatchPlatformOptions({
     </label>
   )
   const tick = (platform: string, key: string, fallback: boolean, label: string): JSX.Element => (
-    <label className="text-sm flex items-center gap-2 cursor-pointer">
+    <label className="ops-tick">
       <input
         type="checkbox"
-        className="size-4 accent-accent-strong"
         checked={flag(platform, key, fallback)}
         onChange={(e) => set(platform, key, e.target.checked)}
       />
@@ -92,8 +91,8 @@ export default function WatchPlatformOptions({
     <div className="space-y-2">
       <p className="label">{t('Per platform')}</p>
       {shown.map((p) => (
-        <div key={p} className="flex items-center gap-x-5 gap-y-2 flex-wrap">
-          <span className="text-sm font-medium w-20 shrink-0">{platformLabel(p)}</span>
+        <div key={p} className="ops-platform-row">
+          <span className="text-sm font-medium text-ink w-20 shrink-0">{platformLabel(p)}</span>
           {p === 'youtube' && select(p, 'privacy', YOUTUBE_PRIVACY, 'Visibility')}
           {p === 'tiktok' && (
             <>
@@ -109,10 +108,10 @@ export default function WatchPlatformOptions({
           {p === 'instagram' && select(p, 'postType', INSTAGRAM_TYPE, 'Post as')}
           {p === 'facebook' && select(p, 'postType', FACEBOOK_TYPE, 'Post as')}
           {p === 'pinterest' && (
-            <label className="text-sm flex items-center gap-2">
-              <span className="text-muted">{t('Board ID')}</span>
+            <label className="ops-field-inline">
+              <span className="text-sm text-muted">{t('Board ID')}</span>
               <input
-                className="input !w-56 !py-1"
+                className="input !w-56 max-w-full"
                 value={str(p, 'pinterestBoardId', '')}
                 placeholder={t('Needed for Pinterest')}
                 onChange={(e) => set(p, 'pinterestBoardId', e.target.value.trim())}

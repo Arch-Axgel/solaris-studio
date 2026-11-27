@@ -23,17 +23,62 @@ import {
   WhatsNew
 } from './layers'
 
+/** True while a full-window <Overlay> (layout editor, setup wizard, install
+ *  plan...) is open. Global keys stand down then: a palette or drawer opened
+ *  over it steals Esc from it, and a G-chord or Alt+Arrow that switches page
+ *  hides the page that holds the overlay while its modal dialog keeps the
+ *  whole app inert (nothing clickable, nothing visible to close). */
+const overlayOpen = (): boolean => document.documentElement.dataset.overlay !== undefined
+const guard =
+  (fn: () => void): (() => void) =>
+  () => {
+    if (!overlayOpen()) fn()
+  }
+
+/** A file or link dropped anywhere that isn't a drop zone must not replace
+ *  the app with that file (Electron's main process blocks the navigation too).
+ *  Runs on window in the bubble phase, after the drop zones (QuickPaste,
+ *  AddVideos...) had their turn: whatever they accepted is already
+ *  defaultPrevented and left alone. Text fields keep their native text drop,
+ *  but not a file drop: a text box doesn't take files, so Chromium would
+ *  open the file in the window. File inputs keep their native file drop. */
+function installDropGuard(): () => void {
+  const native = (e: DragEvent): boolean => {
+    const target = e.target
+    if (!(target instanceof Element)) return false
+    if (target.closest('input[type="file"]')) return true
+    const files = Array.from(e.dataTransfer?.types ?? []).includes('Files')
+    return !files && !!target.closest('input, textarea, [contenteditable]:not([contenteditable="false"])')
+  }
+  const onDragOver = (e: DragEvent): void => {
+    if (e.defaultPrevented || native(e)) return
+    e.preventDefault()
+    // "Can't drop here" cursor instead of the copy/link one.
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'none'
+  }
+  const onDrop = (e: DragEvent): void => {
+    if (e.defaultPrevented || native(e)) return
+    e.preventDefault()
+  }
+  window.addEventListener('dragover', onDragOver)
+  window.addEventListener('drop', onDrop)
+  return () => {
+    window.removeEventListener('dragover', onDragOver)
+    window.removeEventListener('drop', onDrop)
+  }
+}
+
 /** Registers the global keyboard map (spec 3.9). G-chords come from PAGES. */
 function GlobalKeys(): JSX.Element {
   const route = useRoute()
-  useHotkey('ctrl+k', () => toggleLayer('palette'), { allowInInputs: true })
-  useHotkey('ctrl+n', () => openLayer('create'))
-  useHotkey('ctrl+j', () => toggleLayer('assistant'))
-  useHotkey('ctrl+shift+a', () => toggleLayer('activity'))
-  useHotkey('?', () => toggleLayer('shortcuts'))
-  useHotkey('f1', () => openLayer('help', { page: route.page }))
-  useHotkey('alt+arrowleft', () => back())
-  useHotkey('alt+arrowright', () => forward())
+  useHotkey('ctrl+k', guard(() => toggleLayer('palette')), { allowInInputs: true })
+  useHotkey('ctrl+n', guard(() => openLayer('create')))
+  useHotkey('ctrl+j', guard(() => toggleLayer('assistant')))
+  useHotkey('ctrl+shift+a', guard(() => toggleLayer('activity')))
+  useHotkey('?', guard(() => toggleLayer('shortcuts')))
+  useHotkey('f1', guard(() => openLayer('help', { page: route.page })))
+  useHotkey('alt+arrowleft', guard(() => back()))
+  useHotkey('alt+arrowright', guard(() => forward()))
   return (
     <>
       {PAGES.map((p) => (
@@ -44,7 +89,7 @@ function GlobalKeys(): JSX.Element {
 }
 
 function Chord({ chord, page }: { chord: string; page: (typeof PAGES)[number]['id'] }): null {
-  useHotkey(chord.toLowerCase(), () => navigate({ page }))
+  useHotkey(chord.toLowerCase(), guard(() => navigate({ page })))
   return null
 }
 
@@ -64,6 +109,7 @@ export default function Shell({
   const [prefs] = useUiPrefs()
   useEffect(() => installHotkeys(), [])
   useEffect(() => startActivityFeed(), [])
+  useEffect(() => installDropGuard(), [])
   // Mounted at the shell, not on the queue page: the point of a notification
   // is to reach someone who is NOT looking at the queue.
   useQueueNotifications()

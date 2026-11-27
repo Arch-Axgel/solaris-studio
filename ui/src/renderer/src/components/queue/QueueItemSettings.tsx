@@ -19,6 +19,7 @@ import {
   usableFor
 } from '../../lib/steps'
 import { t } from '../../lib/i18n'
+import { Button } from '../ui'
 
 /** Settings for ONE queued video, or for every video a watched channel posts.
  *
@@ -215,10 +216,9 @@ export default function QueueItemSettings({
     onChange: (v: boolean) => void,
     title: string
   ): JSX.Element => (
-    <label className="flex items-center gap-2 cursor-pointer text-sm" title={title}>
+    <label className="ops-tick" title={title}>
       <input
         type="checkbox"
-        className="size-4 accent-accent-strong"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
       />
@@ -229,7 +229,7 @@ export default function QueueItemSettings({
   return (
     <div className="mt-3 pt-3 border-t border-line/60 space-y-3">
       <p className="label">{t(heading)}</p>
-      <div className="flex gap-x-5 gap-y-2 flex-wrap">
+      <div className="ops-ticks">
         {toggle('Captions', '', captions, setCaptions, 'Burn captions into this video’s clips')}
         {toggle(
           '60s+',
@@ -417,10 +417,10 @@ export default function QueueItemSettings({
       )}
 
       {verticalLive && (
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="ops-field-inline">
           <p className="label shrink-0">{t('Vertical Live content')}</p>
           <select
-            className="input !w-72"
+            className="input !w-auto min-w-56 max-w-full"
             value={verticalValue(sport) ?? (gamingScoring ? 'gaming' : 'standard')}
             onChange={(e) => {
               if (e.target.value.startsWith('sport:')) {
@@ -451,28 +451,27 @@ export default function QueueItemSettings({
       )}
 
       {longform && (
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="ops-field-inline">
           <p className="label shrink-0">{t('Longform output')}</p>
           <select
-            className="input !w-64"
+            className="input !w-auto min-w-56 max-w-full"
             value={longformMode}
             onChange={(e) => setLongformMode(e.target.value)}
-            aria-label="Longform output type"
+            aria-label={t('Longform output type')}
           >
-            <option value="short_clips">Short Clips (up to 60s, horizontal)</option>
-            <option value="clips_140">Clips (up to 140s — X/Twitter)</option>
-            <option value="highlights">Highlights (best-of, 8-20 min by quality)</option>
-            <option value="edited_stream">Edited Stream (downtime removed)</option>
+            <option value="short_clips">{t('Short Clips (up to 60s, horizontal)')}</option>
+            <option value="clips_140">{t('Clips (up to 140s — X/Twitter)')}</option>
+            <option value="highlights">{t('Highlights (best-of, 8-20 min by quality)')}</option>
+            <option value="edited_stream">{t('Edited Stream (downtime removed)')}</option>
           </select>
           <label
-            className="flex items-center gap-2 text-sm cursor-pointer"
+            className="ops-tick"
             title={t(
               'Makes the vertical 9:16 Shorts of this video too, in the same run: the Shorts first, then the 16:9 output. The horizontal clips are marked 16:9.'
             )}
           >
             <input
               type="checkbox"
-              className="size-4 accent-accent-strong"
               checked={longformShorts}
               onChange={(e) => setLongformShorts(e.target.checked)}
             />
@@ -483,13 +482,16 @@ export default function QueueItemSettings({
 
       {/* Open with captions off too: the post style still applies then (a
           Highlights card goes on every clip), so it must stay in reach. */}
-      <button
-        className="btn-ghost"
+      <Button
+        size="sm"
+        variant="subtle"
+        icon="palette"
+        iconRight={styleOpen ? 'chevron-up' : 'chevron-down'}
         onClick={() => setStyleOpen(!styleOpen)}
         aria-expanded={styleOpen}
       >
-        {captions ? t('Caption style') : t('Post style')} {styleOpen ? '▾' : '▸'}
-      </button>
+        {captions ? t('Caption style') : t('Post style')}
+      </Button>
       {styleOpen && (
         <PostStyleControls
           idPrefix={`q${job.id}`}
@@ -511,16 +513,17 @@ export default function QueueItemSettings({
         />
       )}
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         {autoSave ? (
           <span className="text-xs text-muted">
             {busy ? t('Saving…') : t('Changes save as you make them.')}
           </span>
         ) : (
-          <button className="btn-accent" onClick={save} disabled={busy}>
+          <Button size="sm" variant="accent" icon="check" onClick={save} disabled={busy}>
             {busy ? t('Saving…') : t('Save settings')}
-          </button>
+          </Button>
         )}
+
         {saved && <span className="text-sm text-gold">{t('Saved')}</span>}
         {error && <span className="text-sm text-error">{error}</span>}
       </div>

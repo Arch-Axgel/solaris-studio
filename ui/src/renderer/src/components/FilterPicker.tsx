@@ -44,9 +44,11 @@ const LABELS: Record<FilterName, string> = {
   glow: 'Soft Glow'
 }
 
-/** A colorful sample every preset visibly transforms. */
+/** A sample every preset visibly transforms, in the app's own palette
+ *  (shadow, burgundy, gold, highlight) rather than a rainbow: warm and
+ *  cool shifts, fades and B&W all still read on it. */
 const SWATCH_BG =
-  'linear-gradient(135deg, #f59e0b 0%, #ef4444 30%, #8b5cf6 60%, #0ea5e9 100%)'
+  'linear-gradient(135deg, var(--color-abyss) 0%, var(--color-velvet) 22%, var(--color-accent-strong) 48%, var(--color-gold) 76%, var(--color-ink) 100%)'
 
 export default function FilterPicker({
   value,

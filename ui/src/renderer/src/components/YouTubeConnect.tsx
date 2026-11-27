@@ -3,7 +3,15 @@ import { t } from '../lib/i18n'
 import { getYoutubeStatus, useYoutubeAccount, youtubeAccount } from '../lib/stores/youtubeAccount'
 import { setupDone } from './SetupWizard'
 import { Icon } from './icons'
-import { Button, Callout, Dialog } from './ui'
+import { Button, Callout, Dialog, Disclosure } from './ui'
+
+/** The main process's "not signed in" message names a button ("Click Sign
+ *  in") that reads "Try again" by the time the message shows. */
+function errorText(e: string): string {
+  if (/^\s*Not signed in yet\.\s+Click Sign in\b/.test(e))
+    return t('Not signed in yet. Click Try again and finish signing in to Google in the window that opens.')
+  return e
+}
 
 /** The burner-account prompt.
  *
@@ -368,27 +376,8 @@ export default function YouTubeConnect(): JSX.Element | null {
               )}
             </p>
           )}
-          <Callout tone="gold" icon="alert" title={t('Use a burner account, not your main one')}>
-            {t('Create a throwaway Google account for this. If YouTube ever flags the downloads, your real account stays out of it.')}
-          </Callout>
-          <ul className="yt-connect-points">
-            <li>
-              <Icon name="check" size={14} className="text-gold" />
-              <span>{t('It stays signed in, even after you restart Solaris Studio.')}</span>
-            </li>
-            <li>
-              <Icon name="minimize" size={14} className="text-gold" />
-              <span>{t('The browser runs minimized in the background and is refreshed before each download.')}</span>
-            </li>
-            <li>
-              <Icon name="hard-drive" size={14} className="text-gold" />
-              <span>{t('Its cookies never leave this PC.')}</span>
-            </li>
-            <li>
-              <Icon name="info" size={14} className="text-gold" />
-              <span>{t('Google may ask you to verify a brand-new account with a phone number or a captcha. That happens in the browser, not here.')}</span>
-            </li>
-          </ul>
+          {/* What went wrong comes first, right under the intro: it is the
+              thing to read before pressing the button again. */}
           {error && (
             // role="alert": the error lands in a dialog that is already open,
             // so a screen reader would otherwise not hear it.
@@ -397,15 +386,67 @@ export default function YouTubeConnect(): JSX.Element | null {
                 tone="error"
                 title={errorKind === 'unfinished' ? t('Sign-in didn’t finish') : t('Couldn’t start the sign-in')}
               >
-                {error}
+                {errorText(error)}
               </Callout>
             </div>
+          )}
+          {mode === 'expired' ? (
+            // They have done this before: the teaching is one click away.
+            <Disclosure summary={t('How this works')}>
+              <div className="space-y-3 pt-1">
+                <Callout tone="gold" icon="alert" title={t('Use a burner account, not your main one')}>
+                  {t('Create a throwaway Google account for this. If YouTube ever flags the downloads, your real account stays out of it.')}
+                </Callout>
+                <ul className="yt-connect-points">
+                <li>
+                  <Icon name="check" size={14} className="text-gold" />
+                  <span>{t('It stays signed in, even after you restart Solaris Studio.')}</span>
+                </li>
+                <li>
+                  <Icon name="minimize" size={14} className="text-gold" />
+                  <span>{t('The browser runs minimized in the background and is refreshed before each download.')}</span>
+                </li>
+                <li>
+                  <Icon name="hard-drive" size={14} className="text-gold" />
+                  <span>{t('Its cookies never leave this PC.')}</span>
+                </li>
+                <li>
+                  <Icon name="info" size={14} className="text-gold" />
+                  <span>{t('Google may ask you to verify a brand-new account with a phone number or a captcha. That happens in the browser, not here.')}</span>
+                </li>
+              </ul>
+              </div>
+            </Disclosure>
+          ) : (
+            <>
+              <Callout tone="gold" icon="alert" title={t('Use a burner account, not your main one')}>
+                {t('Create a throwaway Google account for this. If YouTube ever flags the downloads, your real account stays out of it.')}
+              </Callout>
+            <ul className="yt-connect-points">
+              <li>
+                <Icon name="check" size={14} className="text-gold" />
+                <span>{t('It stays signed in, even after you restart Solaris Studio.')}</span>
+              </li>
+              <li>
+                <Icon name="minimize" size={14} className="text-gold" />
+                <span>{t('The browser runs minimized in the background and is refreshed before each download.')}</span>
+              </li>
+              <li>
+                <Icon name="hard-drive" size={14} className="text-gold" />
+                <span>{t('Its cookies never leave this PC.')}</span>
+              </li>
+              <li>
+                <Icon name="info" size={14} className="text-gold" />
+                <span>{t('Google may ask you to verify a brand-new account with a phone number or a captcha. That happens in the browser, not here.')}</span>
+              </li>
+            </ul>
+            </>
           )}
         </div>
       )}
 
       {mode === 'waiting' && checking && (
-        <div className="yt-connect-wait anim-fade outline-none" key="checking" ref={checkingRef} tabIndex={-1}>
+        <div className="yt-connect-wait yt-connect-quiet anim-fade" key="checking" ref={checkingRef} tabIndex={-1}>
           <span className="yt-connect-pulse" aria-hidden>
             <span className="ui-spinner" />
           </span>
@@ -424,13 +465,13 @@ export default function YouTubeConnect(): JSX.Element | null {
             <Icon name="youtube" size={22} />
           </span>
           <div className="min-w-0">
-            <p className="text-ink font-medium">{t('Finish signing in in the browser window that opened')}</p>
+            <p className="text-ink font-medium">{t('Finish in the browser window')}</p>
             {supported ? (
               // The sign-in window is an ordinary browser with no remote
               // connection, so there is no "show it again" here: the app
               // can't bring it forward, and the user can see it already.
               <p className="text-sm text-muted mt-1 leading-relaxed">
-                {t('Sign in to your burner Google account in the browser window that opened. When you’re done, click I’ve signed in — or just close that window.')}
+                {t('Sign in to your burner Google account there. When you’re done, click I’ve signed in — or just close that window.')}
               </p>
             ) : (
               <p className="text-sm text-muted mt-1 leading-relaxed">

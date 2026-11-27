@@ -119,7 +119,7 @@ export default function BrandingEditor(): JSX.Element {
           </button>
         )}
         <input
-          className="input !py-1 text-sm !w-52"
+          className="input !py-1 text-sm !w-72 max-w-full"
           value={name}
           placeholder="Profile name (e.g. YouTube Channel)"
           onChange={(e) => setName(e.target.value)}

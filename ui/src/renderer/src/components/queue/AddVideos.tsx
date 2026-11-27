@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../../lib/api'
 import type { CaptionStyle, JobOptions, PipelineChoice } from '../../lib/types'
 import CaptionStyleControls, {
@@ -33,10 +33,13 @@ import {
   verticalSports,
   verticalValue
 } from '../../lib/sports'
-import { Folder, Trash } from '../icons'
+import { Icon, Trash } from '../icons'
+import { Button, Callout } from '../ui'
 import { t } from '../../lib/i18n'
 
 const DRAFT_KEY = 'queue-draft'
+/** Video files the list takes when dropped, by name when the type is unknown. */
+const VIDEO_FILE = /\.(mp4|mkv|mov|webm|avi|m4v|flv|ts)$/i
 
 const REASONS: Record<string, string> = {
   already_processed: 'already processed',
@@ -371,13 +374,45 @@ function loadDraft(): Slot[] {
  *
  *  Every row owns its own options object, so toggling video 2 writes video 2
  *  and nothing else. */
-export default function AddVideos({ onAdded, initialLink }: { onAdded?: () => void; initialLink?: string }): JSX.Element {
+export default function AddVideos({
+  onAdded,
+  initialLink,
+  start = true
+}: {
+  onAdded?: () => void
+  initialLink?: string
+  /** false: add the videos to the queue without starting it (the Create
+   *  sheet's "Add to queue"); they wait there until Start. */
+  start?: boolean
+}): JSX.Element {
   const [slots, setSlots] = useState<Slot[]>(loadDraft)
-  // A link handed in by the opener (Home quick-paste, palette): seeds the first slot only when it is empty.
+  // A link handed in by the opener (Home quick-paste, palette): seeds the
+  // first slot when it is empty, or joins the saved list as a new row (from
+  // the current preset) rather than being dropped.
   useEffect(() => {
     if (!initialLink) return
-    setSlots((prev) => (prev.length > 0 && !prev[0].url && !prev[0].path ? [{ ...prev[0], url: initialLink }, ...prev.slice(1)] : prev))
+    setSlots((prev) => {
+      if (prev.length > 0 && !prev[0].url && !prev[0].path) return [{ ...prev[0], url: initialLink }, ...prev.slice(1)]
+      if (prev.some((s) => s.url.trim() === initialLink)) return prev
+      return [...prev, { ...emptySlot(), url: initialLink }]
+    })
   }, [initialLink])
+  // Files (or a link) dragged over the list.
+  const [drag, setDrag] = useState(false)
+  const dragDepth = useRef(0)
+  const [dropNote, setDropNote] = useState<string | null>(null)
+  // The branding editor, opened from Watermark's "Set up branding" when no
+  // profile exists yet; a change inside re-reads the saved selection.
+  const [showBranding, setShowBranding] = useState(false)
+  const [, setBrandingTick] = useState(0)
+  // The editor renders under the list's footer; bring it into view when it
+  // opens so a click on a row near the top visibly does something.
+  const brandingRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!showBranding) return
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    brandingRef.current?.scrollIntoView({ block: 'nearest', behavior: reduce ? 'auto' : 'smooth' })
+  }, [showBranding])
   const [channel, setChannel] = useState(localStorage.getItem('upload-channel') ?? '')
   const [openStyle, setOpenStyle] = useState<string | null>(null)
   // The row whose Gaming / Reaction split is being set up, on its own frames.
@@ -794,9 +829,23 @@ export default function AddVideos({ onAdded, initialLink }: { onAdded?: () => vo
   const addSlot = (): void =>
     setSlots((prev) => [...prev, emptySlot(prev[prev.length - 1]?.options)])
 
+  /** A dropped link: into the empty row, or as a new row. */
+  const addLink = (url: string): void =>
+    setSlots((prev) => {
+      if (prev.some((s) => s.url.trim() === url)) return prev
+      const empty = prev.findIndex((s) => !s.url.trim() && !s.path)
+      if (empty >= 0) return prev.map((s, i) => (i === empty ? { ...s, url, error: undefined } : s))
+      return [...prev, { ...emptySlot(prev[prev.length - 1]?.options), url }]
+    })
+
   const addFiles = async (): Promise<void> => {
     const picked = await window.studio.pickVideoFiles()
     if (!picked || picked.length === 0) return
+    addPaths(picked)
+  }
+
+  /** Files from the picker or dropped on the list, each as its own row. */
+  const addPaths = (picked: string[]): void => {
     setSlots((prev) => {
       const known = new Set(prev.map((s) => s.path))
       const base = prev[prev.length - 1]?.options
@@ -877,7 +926,7 @@ export default function AddVideos({ onAdded, initialLink }: { onAdded?: () => vo
       }
 
       // Only now does anything begin.
-      if (ok > 0 && !queueRunning) await api.resumeQueue()
+      if (ok > 0 && !queueRunning && start) await api.resumeQueue()
 
       setAdded(ok)
       setAlreadyDone(done)
@@ -899,117 +948,93 @@ export default function AddVideos({ onAdded, initialLink }: { onAdded?: () => vo
     }
   }
 
+  /* ---------- drag & drop: video files (or a link) onto the list ---------- */
+
+  const onDragEnter = (e: React.DragEvent): void => {
+    const types = Array.from(e.dataTransfer.types)
+    if (!types.includes('Files') && !types.includes('text/uri-list')) return
+    e.preventDefault()
+    dragDepth.current++
+    setDrag(true)
+  }
+  const onDragLeave = (): void => {
+    dragDepth.current = Math.max(0, dragDepth.current - 1)
+    if (dragDepth.current === 0) setDrag(false)
+  }
+  const onDrop = (e: React.DragEvent): void => {
+    e.preventDefault()
+    dragDepth.current = 0
+    setDrag(false)
+    const dropped = Array.from(e.dataTransfer.files)
+    const text = (e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain')).trim()
+    if (dropped.length === 0) {
+      if (/^https?:\/\//i.test(text)) addLink(text.split(/\s+/)[0])
+      return
+    }
+    const videos = dropped.filter((f) => f.type.startsWith('video/') || VIDEO_FILE.test(f.name))
+    // Electron exposes the file's path on the File object.
+    const paths = videos.map((f) => (f as File & { path?: string }).path ?? '').filter(Boolean)
+    if (videos.length === 0) setDropNote(t('Only video files can be dropped here.'))
+    else if (paths.length === 0) setDropNote(t('This window can’t read dropped files. Use Upload video file instead.'))
+    else {
+      setDropNote(null)
+      addPaths(paths)
+    }
+  }
+
+  const generateLabel = busy
+    ? t('Starting…')
+    : queueRunning || !start
+      ? `${t('Add to queue')}${ready.length > 1 ? ` (${ready.length})` : ''}`
+      : `${t('Generate clips')}${ready.length > 1 ? ` (${ready.length})` : ''}`
+
   return (
     <div className="space-y-3">
-      <div className="card space-y-2">
+      <div
+        className={`card av ${drag ? 'is-drag' : ''}`}
+        onDragEnter={onDragEnter}
+        onDragOver={(e) => {
+          const types = Array.from(e.dataTransfer.types)
+          if (types.includes('Files') || types.includes('text/uri-list')) e.preventDefault()
+        }}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+      >
         {slots.map((slot, n) => (
-          <div key={slot.key}>
-            <div className="flex gap-3 items-center flex-wrap">
-              {slot.path ? (
-                <input
-                  className="input w-72 max-w-full"
-                  aria-label={`Title for video ${n + 1}`}
-                  title={slot.path}
-                  value={slot.title}
-                  placeholder={t('Video title')}
-                  onChange={(e) => patch(slot.key, { title: e.target.value })}
-                />
-              ) : (
-                <input
-                  className="input w-72 max-w-full"
-                  placeholder={t('Paste a YouTube, Twitch, or Kick URL…')}
-                  aria-label={`Video URL ${n + 1}`}
-                  value={slot.url}
-                  onChange={(e) =>
-                    patch(slot.key, {
-                      url: e.target.value,
-                      ...(slot.options.gaming_layout ? { options: copyable(slot.options) } : {})
-                    })
-                  }
-                  onKeyDown={(e) => e.key === 'Enter' && generate()}
-                />
+          <div key={slot.key} className="av-slot">
+            <div className="av-slot-head">
+              {slots.length > 1 && (
+                <span className="av-num" aria-hidden>
+                  {n + 1}
+                </span>
               )}
-
-              <label
-                className="flex items-center gap-2 cursor-pointer text-sm shrink-0 whitespace-nowrap"
-                title="Burn captions into this video’s clips"
-              >
-                <input
-                  type="checkbox"
-                  className="size-4 accent-accent-strong"
-                  checked={slot.options.captions !== false}
-                  onChange={(e) =>
-                    replaceOptions(slot.key, toggle(slot.options, 'captions', e.target.checked))
-                  }
-                />
-                {t('Captions')}
-              </label>
-
-              {/* Immediately beside Captions: it configures that switch. It
-                  opens with captions off too, for the post style, which still
-                  applies then (a Highlights card goes on every clip). */}
-              <button
-                className="btn-ghost shrink-0"
-                onClick={() => setOpenStyle(openStyle === slot.key ? null : slot.key)}
-                aria-expanded={openStyle === slot.key}
-              >
-                {slot.options.captions === false ? t('Post style') : t('Caption style')}{' '}
-                {openStyle === slot.key ? '▾' : '▸'}
-              </button>
-
-              {TOGGLES.map((tg) => {
-                // Sports shows once the engine says it has a sport (and stays
-                // while it's on, so it can always be turned off).
-                if (tg.key === 'sport' && offered.length === 0 && !slot.options.sport) return null
-                // Pipeline likewise: only once a community pipeline is installed and on.
-                if (tg.key === 'pipeline' && usable.length === 0 && !slot.options.pipeline) return null
-                // Rate & understand likewise: once a plugin that can rate or understand is.
-                if (tg.key === 'steps' && stepUsable.length === 0 && !hasSteps(slot.options)) return null
-                // Suggest edits likewise: once a plugin that can suggest edits is.
-                if (tg.key === 'edit' && editUsable.length === 0 && !slot.options.edit?.length) return null
-                // Watermark needs a saved branding profile to point at. Without
-                // one there is nothing to burn in, so the box could be ticked
-                // and would simply un-tick itself — which reads as a broken
-                // checkbox. Disable it and say what is missing instead.
-                const needsProfile = tg.key === 'watermark' && !watermarkSelection().profileId
-                // Rate & understand the same way, when the only plugin that
-                // could do it is this video's Pipeline: the API refuses a
-                // pipeline named again, so ticking would do nothing.
-                const onlyThePipeline =
-                  tg.key === 'steps' && !hasSteps(slot.options) && !firstStepPlugin(stepUsable, slot.options)
-                const disabled = needsProfile || onlyThePipeline
-                const label = (
-                  <label
-                    key={tg.key}
-                    className={`flex items-center gap-2 text-sm shrink-0 whitespace-nowrap ${
-                      disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
-                    }`}
-                    title={
-                      needsProfile
-                        ? 'Create a branding profile below first — there is no logo to burn in yet.'
-                        : onlyThePipeline
-                          ? t(
-                              'The only plugin you can use to rate or understand moments is this video’s Pipeline, and it can’t also be chosen here. Install or turn on another one in the Marketplace, or choose a different Pipeline.'
-                            )
-                          : tg.title
+              <span className="av-url">
+                <Icon name={slot.path ? 'film' : 'link'} size={16} />
+                {slot.path ? (
+                  <input
+                    className="input"
+                    aria-label={`Title for video ${n + 1}`}
+                    title={slot.path}
+                    value={slot.title}
+                    placeholder={t('Video title')}
+                    onChange={(e) => patch(slot.key, { title: e.target.value })}
+                  />
+                ) : (
+                  <input
+                    className="input"
+                    placeholder={t('Paste a YouTube, Twitch, or Kick URL…')}
+                    aria-label={`Video URL ${n + 1}`}
+                    value={slot.url}
+                    onChange={(e) =>
+                      patch(slot.key, {
+                        url: e.target.value,
+                        ...(slot.options.gaming_layout ? { options: copyable(slot.options) } : {})
+                      })
                     }
-                  >
-                    <input
-                      type="checkbox"
-                      className="size-4 accent-accent-strong"
-                      checked={isOn(slot.options, tg.key)}
-                      disabled={disabled}
-                      onChange={(e) => {
-                        replaceOptions(slot.key, toggle(slot.options, tg.key, e.target.checked))
-                        if (tg.key === 'gaming' && e.target.checked && (slot.path || slot.url.trim()))
-                          setSplitFor(slot.key)
-                      }}
-                    />
-                    {t(tg.label)} <span className="text-muted">{t(tg.hint)}</span>
-                  </label>
-                )
-                return label
-              })}
+                    onKeyDown={(e) => e.key === 'Enter' && generate()}
+                  />
+                )}
+              </span>
 
               {/* Always removable once it holds something. Hiding this on the
                   last row trapped a single uploaded file: its name is not an
@@ -1018,7 +1043,8 @@ export default function AddVideos({ onAdded, initialLink }: { onAdded?: () => vo
                   empty row rather than nothing. */}
               {(slots.length > 1 || slot.url.trim() || slot.path) && (
                 <button
-                  className="btn-ghost shrink-0 !px-2"
+                  type="button"
+                  className="btn-icon av-remove"
                   title={t('Remove this video')}
                   aria-label={t('Remove this video')}
                   onClick={() =>
@@ -1033,8 +1059,104 @@ export default function AddVideos({ onAdded, initialLink }: { onAdded?: () => vo
               )}
             </div>
 
+            <div className="av-toggles">
+              <label className="av-toggle" title="Burn captions into this video’s clips">
+                <input
+                  type="checkbox"
+                  checked={slot.options.captions !== false}
+                  onChange={(e) =>
+                    replaceOptions(slot.key, toggle(slot.options, 'captions', e.target.checked))
+                  }
+                />
+                {t('Captions')}
+              </label>
+
+              {/* Immediately beside Captions: it configures that switch. It
+                  opens with captions off too, for the post style, which still
+                  applies then (a Highlights card goes on every clip). */}
+              <button
+                type="button"
+                className="av-toggle av-style-btn"
+                onClick={() => setOpenStyle(openStyle === slot.key ? null : slot.key)}
+                aria-expanded={openStyle === slot.key}
+              >
+                <Icon name="palette" size={14} />
+                {slot.options.captions === false ? t('Post style') : t('Caption style')}
+                <Icon name="chevron-down" size={14} className="av-chev" />
+              </button>
+
+              <span className="av-toggles-rule" aria-hidden />
+
+              {TOGGLES.map((tg) => {
+                // Sports shows once the engine says it has a sport (and stays
+                // while it's on, so it can always be turned off).
+                if (tg.key === 'sport' && offered.length === 0 && !slot.options.sport) return null
+                // Pipeline likewise: only once a community pipeline is installed and on.
+                if (tg.key === 'pipeline' && usable.length === 0 && !slot.options.pipeline) return null
+                // Rate & understand likewise: once a plugin that can rate or understand is.
+                if (tg.key === 'steps' && stepUsable.length === 0 && !hasSteps(slot.options)) return null
+                // Suggest edits likewise: once a plugin that can suggest edits is.
+                if (tg.key === 'edit' && editUsable.length === 0 && !slot.options.edit?.length) return null
+                // Watermark needs a saved branding profile to point at. Without
+                // one there is nothing to burn in, so the box could be ticked
+                // and would simply un-tick itself — which reads as a broken
+                // checkbox. Disable it and offer to set one up instead.
+                const needsProfile = tg.key === 'watermark' && !watermarkSelection().profileId
+                // Rate & understand the same way, when the only plugin that
+                // could do it is this video's Pipeline: the API refuses a
+                // pipeline named again, so ticking would do nothing.
+                const onlyThePipeline =
+                  tg.key === 'steps' && !hasSteps(slot.options) && !firstStepPlugin(stepUsable, slot.options)
+                const disabled = needsProfile || onlyThePipeline
+                const label = (
+                  <label
+                    key={tg.key}
+                    className="av-toggle"
+                    data-disabled={disabled ? 'true' : undefined}
+                    title={
+                      needsProfile
+                        ? t('Set up a branding profile first: there is no logo to burn in yet.')
+                        : onlyThePipeline
+                          ? t(
+                              'The only plugin you can use to rate or understand moments is this video’s Pipeline, and it can’t also be chosen here. Install or turn on another one in the Marketplace, or choose a different Pipeline.'
+                            )
+                          : tg.title
+                    }
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isOn(slot.options, tg.key)}
+                      disabled={disabled}
+                      onChange={(e) => {
+                        replaceOptions(slot.key, toggle(slot.options, tg.key, e.target.checked))
+                        if (tg.key === 'gaming' && e.target.checked && (slot.path || slot.url.trim()))
+                          setSplitFor(slot.key)
+                      }}
+                    />
+                    {t(tg.label)} <span className="av-hint">{t(tg.hint)}</span>
+                  </label>
+                )
+                if (needsProfile)
+                  return (
+                    <span key={tg.key} className="av-toggle-group">
+                      {label}
+                      <button
+                        type="button"
+                        className="av-setup"
+                        aria-expanded={showBranding}
+                        onClick={() => setShowBranding((s) => !s)}
+                      >
+                        <Icon name="plus" size={13} />
+                        {t('Set up branding')}
+                      </button>
+                    </span>
+                  )
+                return label
+              })}
+            </div>
+
             {slot.options.sport && offered.length > 0 && (
-              <div className="flex items-center gap-3 flex-wrap mt-2">
+              <div className="av-sub">
                 <SportFields
                   value={slot.options.sport}
                   sports={offered}
@@ -1046,7 +1168,7 @@ export default function AddVideos({ onAdded, initialLink }: { onAdded?: () => vo
             )}
 
             {slot.options.pipeline && (
-              <div className="flex items-center gap-3 flex-wrap mt-2">
+              <div className="av-sub">
                 <PipelineFields
                   value={slot.options.pipeline}
                   pipelines={pipelines}
@@ -1058,7 +1180,7 @@ export default function AddVideos({ onAdded, initialLink }: { onAdded?: () => vo
             )}
 
             {hasSteps(slot.options) && (
-              <div className="flex items-center gap-3 flex-wrap mt-2">
+              <div className="av-sub">
                 <StepFields
                   options={slot.options}
                   plugins={stepPlugins}
@@ -1074,7 +1196,7 @@ export default function AddVideos({ onAdded, initialLink }: { onAdded?: () => vo
             )}
 
             {Boolean(slot.options.edit?.length) && (
-              <div className="flex items-center gap-3 flex-wrap mt-2">
+              <div className="av-sub">
                 <StepFields
                   steps={['edit']}
                   options={slot.options}
@@ -1092,10 +1214,10 @@ export default function AddVideos({ onAdded, initialLink }: { onAdded?: () => vo
 
             {/* What the live is: talking, a game, or a match (Sports). */}
             {slot.options.vertical_live && (
-              <div className="flex items-center gap-3 flex-wrap mt-2">
+              <div className="av-sub">
                 <span className="label shrink-0">{t('Vertical Live content')}</span>
                 <select
-                  className="input !w-72"
+                  className="input av-select"
                   value={verticalValue(slot.options.sport) ?? (slot.options.gaming_scoring ? 'gaming' : 'standard')}
                   onChange={(e) => setVerticalContent(slot, e.target.value)}
                   aria-label={`${t('Vertical Live content')} ${n + 1}`}
@@ -1113,30 +1235,29 @@ export default function AddVideos({ onAdded, initialLink }: { onAdded?: () => vo
             )}
 
             {slot.options.longform && (
-              <div className="flex items-center gap-3 flex-wrap mt-2">
+              <div className="av-sub">
                 <span className="label shrink-0">{t('Longform output')}</span>
                 <select
-                  className="input !w-64"
+                  className="input av-select"
                   value={slot.options.longform.mode}
                   onChange={(e) =>
                     patchOptions(slot.key, { longform: { ...slot.options.longform, mode: e.target.value } })
                   }
                   aria-label={`Longform output type for video ${n + 1}`}
                 >
-                  <option value="short_clips">Short Clips (up to 60s, horizontal)</option>
-                  <option value="clips_140">Clips (up to 140s — X/Twitter)</option>
-                  <option value="highlights">Highlights (best-of, 8-20 min by quality)</option>
-                  <option value="edited_stream">Edited Stream (downtime removed)</option>
+                  <option value="short_clips">{t('Short Clips (up to 60s, horizontal)')}</option>
+                  <option value="clips_140">{t('Clips (up to 140s — X/Twitter)')}</option>
+                  <option value="highlights">{t('Highlights (best-of, 8-20 min by quality)')}</option>
+                  <option value="edited_stream">{t('Edited Stream (downtime removed)')}</option>
                 </select>
                 <label
-                  className="flex items-center gap-2 text-sm cursor-pointer"
+                  className="av-toggle"
                   title={t(
                     'Makes the vertical 9:16 Shorts of this video too, in the same run: the Shorts first, then the 16:9 output. The horizontal clips are marked 16:9.'
                   )}
                 >
                   <input
                     type="checkbox"
-                    className="size-4 accent-accent-strong"
                     checked={Boolean(slot.options.longform.shorts)}
                     onChange={(e) => setLongformShorts(slot, e.target.checked)}
                   />
@@ -1146,7 +1267,7 @@ export default function AddVideos({ onAdded, initialLink }: { onAdded?: () => vo
             )}
 
             {openStyle === slot.key && (
-              <div className="w-full space-y-3 border-t border-line/60 pt-3 mt-2">
+              <div className="av-style">
                 <p className="label">
                   {slot.options.captions === false ? t('Post style for') : t('Caption style for')}{' '}
                   {slot.path ? slot.title || t('this file') : t('this video')}
@@ -1174,9 +1295,9 @@ export default function AddVideos({ onAdded, initialLink }: { onAdded?: () => vo
             )}
 
             {slot.options.gaming && (
-              <div className="flex items-center gap-3 flex-wrap mt-2 text-xs">
+              <div className="av-sub av-layout">
                 <span className="label shrink-0">{t('Layout')}</span>
-                <span className="text-muted">
+                <span className={slot.options.gaming_layout ? 'text-ink' : 'text-muted'}>
                   {slot.options.gaming_layout
                     ? `${t(PRESETS[slot.options.gaming_layout.preset ?? 'half']?.label ?? 'Split')}${
                         slot.options.gaming_layout.order === 'game_top' &&
@@ -1187,12 +1308,16 @@ export default function AddVideos({ onAdded, initialLink }: { onAdded?: () => vo
                     : t('Not chosen yet: pick a layout on the video’s own frames before processing.')}
                 </span>
                 <button
-                  className="btn-ghost !py-1 shrink-0"
+                  type="button"
+                  className="btn-subtle ui-btn ui-btn-sm shrink-0"
                   disabled={!slot.path && !slot.url.trim()}
                   title={!slot.path && !slot.url.trim() ? t('Paste a link or add a file first') : undefined}
                   onClick={() => setSplitFor(slot.key)}
                 >
-                  {slot.options.gaming_layout ? t('Change layout…') : t('Choose layout…')}
+                  <Icon name="grid" size={14} />
+                  <span className="ui-btn-label">
+                    {slot.options.gaming_layout ? t('Change layout…') : t('Choose layout…')}
+                  </span>
                 </button>
               </div>
             )}
@@ -1220,7 +1345,7 @@ export default function AddVideos({ onAdded, initialLink }: { onAdded?: () => vo
               />
             )}
             {slot.path && slot.options.vertical_live && (
-              <div className="flex items-center gap-3 flex-wrap mt-2">
+              <div className="av-sub">
                 <span className="label shrink-0">{t('Original link')}</span>
                 <input
                   className="input !w-80 max-w-full"
@@ -1231,13 +1356,21 @@ export default function AddVideos({ onAdded, initialLink }: { onAdded?: () => vo
                 />
               </div>
             )}
-            {slot.error && <p className="text-sm text-error mt-1">{slot.error}</p>}
+            {slot.error && (
+              <p className="av-error" role="alert">
+                <Icon name="alert" size={14} />
+                <span>{slot.error}</span>
+              </p>
+            )}
           </div>
         ))}
 
-        <div className="flex gap-3 items-center flex-wrap pt-1">
-          <button
-            className="btn-ghost shrink-0"
+        <div className="av-foot">
+          <Button
+            variant="ghost"
+            size="sm"
+            icon="plus"
+            className="shrink-0"
             onClick={addSlot}
             disabled={full}
             title={
@@ -1246,53 +1379,74 @@ export default function AddVideos({ onAdded, initialLink }: { onAdded?: () => vo
                 : t('Add another video')
             }
           >
-            + {t('Add video')}
-          </button>
-          <button className="btn-ghost shrink-0" onClick={addFiles} disabled={full}>
-            <Folder className="mr-1.5" />
+            {t('Add video')}
+          </Button>
+          <Button variant="ghost" size="sm" icon="folder" className="shrink-0" onClick={addFiles} disabled={full}>
             {t('Upload video file')}
-          </button>
-          {/* Greyed out until there is an upload, the same way Caption style
-              is greyed out until Captions is ticked. A downloaded video takes
-              its channel from the source metadata; only a file off your
-              computer has nobody to file it under.
-
-              Shown blank while disabled: a greyed-out box still displaying the
-              last creator reads as stuck rather than inapplicable. The value
-              is remembered and returns with the next upload. */}
-          <input
-            className="input !w-44 shrink-0"
-            placeholder={t('Creator profile')}
-            aria-label="Creator profile for uploaded files"
-            disabled={!hasFiles}
-            title={
-              hasFiles
-                ? 'Files these uploads under this creator in your library and the Creators tab. Leave blank to skip.'
-                : 'For uploaded files only — a downloaded video brings its own channel name'
-            }
-            value={hasFiles ? channel : ''}
-            onChange={(e) => {
-              setChannel(e.target.value)
-              localStorage.setItem('upload-channel', e.target.value)
-            }}
-          />
+          </Button>
+          {/* Only for files off this computer: a downloaded video takes its
+              channel from the source metadata, so with no upload in the list
+              there is nobody to file it under and the field stays hidden. The
+              value is remembered and returns with the next upload. */}
+          {hasFiles && (
+            <label className="av-creator">
+              <span className="label">{t('Creator profile')}</span>
+              <input
+                className="input"
+                placeholder={t('Creator profile')}
+                aria-label="Creator profile for uploaded files"
+                title="Files these uploads under this creator in your library and the Creators tab. Leave blank to skip."
+                value={channel}
+                onChange={(e) => {
+                  setChannel(e.target.value)
+                  localStorage.setItem('upload-channel', e.target.value)
+                }}
+              />
+            </label>
+          )}
+          <span className="av-foot-hint">
+            <Icon name="upload" size={13} />
+            {t('or drop video files here')}
+          </span>
           {settingsBad && (
             <span className="text-xs text-error ml-auto">{t('Fix the pipeline setting marked in red first.')}</span>
           )}
-          <button
-            className={`btn-accent shrink-0 ${settingsBad ? '' : 'ml-auto'}`}
+          <Button
+            variant="accent"
+            icon={busy ? undefined : queueRunning || !start ? 'layers' : 'sparkle'}
+            loading={busy}
+            className={`shrink-0 av-go ${settingsBad ? '' : 'ml-auto'}`}
             onClick={() => generate()}
             disabled={busy || ready.length === 0 || settingsBad}
           >
-            {busy
-              ? t('Starting…')
-              : queueRunning
-                ? `${t('Add to queue')}${ready.length > 1 ? ` (${ready.length})` : ''}`
-                : `${t('Generate clips')}${ready.length > 1 ? ` (${ready.length})` : ''}`}
-          </button>
+            {generateLabel}
+          </Button>
         </div>
+        {dropNote && (
+          <p className="av-error" role="alert">
+            <Icon name="alert" size={14} />
+            <span>{dropNote}</span>
+          </p>
+        )}
 
-        {wantsWatermark && <BrandingEditor />}
+        {(wantsWatermark || showBranding) && (
+          // Creating a profile here is what makes Watermark tickable: read
+          // the saved selection again after any change inside.
+          <div
+            ref={brandingRef}
+            className="scroll-mb-6"
+            onClickCapture={() => window.setTimeout(() => setBrandingTick((n) => n + 1), 900)}
+          >
+            <BrandingEditor />
+          </div>
+        )}
+
+        {drag && (
+          <div className="av-drop" aria-hidden>
+            <Icon name="upload" size={22} />
+            <span>{t('Drop to add these videos')}</span>
+          </div>
+        )}
       </div>
 
       {full && (
@@ -1302,40 +1456,46 @@ export default function AddVideos({ onAdded, initialLink }: { onAdded?: () => vo
       )}
 
       {added !== null && added > 0 && (
-        <p className="text-sm text-gold px-1">
-          {added === 1
-            ? t('Started - watch the progress below.')
-            : `${added} ${t('videos queued - working through them one at a time.')}`}{' '}
-          <button
-            className="underline hover:text-ink"
-            onClick={() => window.dispatchEvent(new CustomEvent('open-queue'))}
-          >
-            {t('View queue')}
-          </button>
+        <p className="av-added anim-fade">
+          <Icon name="check" size={14} />
+          <span>
+            {added === 1
+              ? t('Started - watch the progress below.')
+              : `${added} ${t('videos queued - working through them one at a time.')}`}{' '}
+            <button
+              type="button"
+              className="underline underline-offset-2 hover:text-ink"
+              onClick={() => window.dispatchEvent(new CustomEvent('open-queue'))}
+            >
+              {t('View queue')}
+            </button>
+          </span>
         </p>
       )}
       {/* Only shown when it actually happened — the common case never sees it. */}
       {alreadyDone.length > 0 && (
-        <div className="card flex items-center gap-3 flex-wrap">
-          <p className="text-sm flex-1 min-w-64">
-            {alreadyDone.length === 1
-              ? t('That video was already processed.')
-              : `${alreadyDone.length} ${t('of those were already processed.')}`}{' '}
-            {t('Make clips again with the settings you chose? Existing clips are kept - new ones are added alongside them.')}
-          </p>
-          <button
-            className="btn-accent shrink-0"
-            disabled={busy}
-            onClick={() => generate(true, alreadyDone)}
-          >
-            {t('Process again')}
-          </button>
-          <button className="btn-ghost shrink-0" onClick={() => setAlreadyDone([])}>
-            {t('Cancel')}
-          </button>
-        </div>
+        <Callout tone="gold" icon="film" className="av-again">
+          <div className="flex items-center gap-3 flex-wrap">
+            <p className="text-sm flex-1 min-w-64">
+              {alreadyDone.length === 1
+                ? t('That video was already processed.')
+                : `${alreadyDone.length} ${t('of those were already processed.')}`}{' '}
+              {t('Make clips again with the settings you chose? Existing clips are kept - new ones are added alongside them.')}
+            </p>
+            <Button variant="accent" size="sm" icon="refresh" className="shrink-0" disabled={busy} onClick={() => generate(true, alreadyDone)}>
+              {t('Process again')}
+            </Button>
+            <Button variant="ghost" size="sm" className="shrink-0" onClick={() => setAlreadyDone([])}>
+              {t('Cancel')}
+            </Button>
+          </div>
+        </Callout>
       )}
-      {error && <div className="card border-error/40 text-error text-sm">{error}</div>}
+      {error && (
+        <Callout tone="error" onDismiss={() => setError(null)}>
+          {error}
+        </Callout>
+      )}
     </div>
   )
 }
@@ -1348,9 +1508,12 @@ function VerticalHint({ slot, onUse }: { slot: Slot; onUse: () => void }): JSX.E
   if (!shape) return null
   if (slot.options.vertical_live && shape.orientation !== 'vertical') {
     return (
-      <p className="text-xs text-warn mt-1">
-        ⚠ {t('This video is')} {shape.width}×{shape.height},{' '}
-        {t('not 9:16. Vertical Live expects a vertically composed video, so it would be refused.')}
+      <p className="av-error text-xs !text-warn">
+        <Icon name="alert" size={13} />
+        <span>
+          {t('This video is')} {shape.width}×{shape.height},{' '}
+          {t('not 9:16. Vertical Live expects a vertically composed video, so it would be refused.')}
+        </span>
       </p>
     )
   }
@@ -1371,9 +1534,10 @@ function VerticalHint({ slot, onUse }: { slot: Slot; onUse: () => void }): JSX.E
     !slot.options.gaming
   ) {
     return (
-      <p className="text-xs text-muted mt-1">
-        {t('This video is 9:16. Is it a vertical live?')}{' '}
-        <button className="text-gold hover:underline" onClick={onUse}>
+      <p className="text-xs text-muted flex items-center gap-1 flex-wrap">
+        <Icon name="bulb" size={13} className="text-gold" />
+        {t('This video is 9:16. Is it a vertical live?')}
+        <button type="button" className="av-setup" onClick={onUse}>
           {t('Use Vertical Live')}
         </button>
       </p>

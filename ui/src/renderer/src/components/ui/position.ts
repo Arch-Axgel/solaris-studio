@@ -77,6 +77,32 @@ export function hideTop(el: HTMLElement): void {
   }
 }
 
+/** Where a floating layer (popover, tooltip, listbox) must be portaled so
+ *  it stays interactive: inside the open <dialog> that contains its anchor
+ *  (a modal dialog makes everything outside its own subtree inert), else
+ *  <body>. The layer still renders in the top layer either way. */
+export function layerHost(anchor: Element | null | undefined): HTMLElement {
+  return (anchor?.closest('dialog[open]') as HTMLElement | null) ?? document.body
+}
+
+/** True when the last input was the keyboard (Tab, arrows…), so focus
+ *  tooltips don't pop up on programmatic focus after a click or hotkey. */
+let lastKeyNav = 0
+let lastPointer = 0
+if (typeof window !== 'undefined') {
+  window.addEventListener(
+    'keydown',
+    (e) => {
+      if (e.key === 'Tab' || e.key.startsWith('Arrow') || e.key === 'Home' || e.key === 'End') lastKeyNav = Date.now()
+    },
+    true
+  )
+  window.addEventListener('pointerdown', () => (lastPointer = Date.now()), true)
+}
+export function focusFromKeyboard(): boolean {
+  return lastKeyNav > lastPointer && Date.now() - lastKeyNav < 1500
+}
+
 export function cx(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(' ')
 }

@@ -13,6 +13,29 @@
    ====================================================================== */
 .ops-page { position: relative }
 .ops-empty { padding: 2rem 1rem }
+/* An empty queue above a history: a single row, not a poster. */
+.ops-empty-slim { padding: 0.9rem 1.25rem }
+.ops-empty-slim .ui-empty {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  column-gap: 1rem;
+  align-items: center;
+  text-align: left;
+  padding: 0;
+}
+.ops-empty-slim .ui-empty > :first-child { grid-row: 1 / 3; width: 56px; height: 56px; margin: 0 }
+.ops-empty-slim .ui-empty > :first-child svg { width: 100%; height: 100% }
+.ops-empty-slim .ui-empty > h3 { grid-column: 2; margin: 0 }
+.ops-empty-slim .ui-empty > :not(:first-child):not(h3):not(:last-child) { grid-column: 2; margin: 0; max-width: none }
+.ops-empty-slim .ui-empty > :last-child:not(h3) { grid-column: 3; grid-row: 1 / 3; margin: 0 }
+@media (max-width: 700px) {
+  .ops-empty-slim .ui-empty { grid-template-columns: auto minmax(0, 1fr) }
+  .ops-empty-slim .ui-empty > :last-child:not(h3) { grid-column: 1 / -1; grid-row: auto; margin-top: 0.75rem; justify-self: start }
+}
+/* "the estimate sharpens…" is a sentence fragment key; capitalise its start. */
+.ops-cap-first > span { display: inline-block }
+.ops-cap-first > span::first-letter { text-transform: uppercase }
 
 .ops-chip {
   font-size: 11px;
@@ -61,8 +84,10 @@
   border: 1px solid color-mix(in srgb, var(--pc) 32%, transparent);
 }
 .ops-platform[data-platform='youtube'] { --pc: var(--ops-youtube) }
-.ops-platform[data-platform='twitch'] { --pc: var(--ops-twitch) }
+/* Twitch purple is dark; its text is lifted so it reads on tinted callouts. */
+.ops-platform[data-platform='twitch'] { --pc: var(--ops-twitch); color: #cdb0ff }
 .ops-platform[data-platform='kick'] { --pc: var(--ops-kick) }
+.ops-platform { text-transform: none; letter-spacing: 0.01em; font-size: 10.5px }
 
 /* Tailwind v4 also generates a `collapse` utility (visibility: collapse) that
    collides with motion.css's grid-rows .collapse. Keep content visible in the
@@ -108,6 +133,8 @@
   font-family: var(--font-cine);
   font-size: 1.15rem;
   font-weight: 600;
+  line-height: 1.25;
+  margin-top: 0.15rem;
   color: var(--color-ink);
 }
 .ops-band-count {
@@ -128,6 +155,8 @@
   gap: 1.25rem;
   align-items: start;
 }
+.ops-lanes[data-cols='2'] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) }
+.ops-lanes-col { display: flex; flex-direction: column; gap: 1.25rem; min-width: 0 }
 .ops-lane {
   border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--color-surface) 70%, transparent);
@@ -143,10 +172,15 @@
   border-bottom: 1px solid var(--color-hairline);
   position: sticky;
   top: 0;
-  z-index: 2;
-  background: color-mix(in srgb, var(--color-surface) 94%, transparent);
+  z-index: var(--z-sticky, 10);
+  /* Opaque: rows scroll underneath a stuck header and must not show through.
+     The lane is surface at 70% over the page base, so this is that colour. */
+  background: color-mix(in srgb, var(--color-surface) 70%, var(--color-base));
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  min-height: 3.25rem;
 }
+.ops-lane-head-slim { min-height: 0; padding: 0.5rem 0.75rem; border-bottom: 0 }
+.ops-lane-head .t-micro { white-space: nowrap }
 .ops-lane-toggle {
   display: inline-flex;
   align-items: center;
@@ -156,6 +190,12 @@
   color: var(--color-ink);
 }
 .ops-lane-toggle:hover { background: rgb(255 255 255 / 0.03) }
+.ops-lane-toggle { min-width: 0; white-space: nowrap }
+.ops-lane-tools { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap }
+.ops-lane-search { flex: 1 1 10rem; min-width: 8rem }
+/* Match the small segmented control beside it (about 32px). */
+.ops-lane-search .input.ui-search-input { height: 34px; min-height: 34px; padding-top: 0; padding-bottom: 0; font-size: 0.8125rem }
+.ops-lane-search .ui-search-icon { width: 14px; height: 14px }
 .ops-lane-chev { transition: transform var(--dur-2) var(--ease-out); color: var(--color-muted) }
 .ops-lane-toggle[aria-expanded='true'] .ops-lane-chev { transform: rotate(90deg) }
 .ops-lane-count {
@@ -298,17 +338,65 @@
   position: relative;
   animation: breathe 2.4s var(--ease-in-out) infinite;
 }
-.ops-qi-title { font-weight: 600; color: var(--color-ink) }
+.ops-qi-main { display: flex; align-items: flex-start; gap: 0.75rem }
+.ops-qi-body { min-width: 0; flex: 1 }
+/* Two lines before an ellipsis: a long title is the one thing worth reading. */
+.ops-qi-title {
+  font-weight: 600;
+  color: var(--color-ink);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
 .ops-qi-meta {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.35rem 0.6rem;
   flex-wrap: wrap;
-  margin-top: 0.3rem;
+  margin-top: 0.35rem;
   font-size: 0.75rem;
   color: var(--color-muted);
   min-width: 0;
 }
+.ops-qi-channel { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.ops-qi-note,
+.ops-qi-took {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+  font-size: 0.8125rem;
+  color: var(--color-muted);
+}
+.ops-qi-note { color: var(--color-warn) }
+.ops-qi-chips { display: flex; gap: 0.375rem; flex-wrap: wrap; margin-top: 0.55rem }
+.ops-qi-extra {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding-left: calc(1.9rem + 0.75rem);
+}
+.ops-qi-extra > * { max-width: 100% }
+.ops-qi-extra > .ops-log-wrap,
+.ops-qi-extra > .ops-why,
+.ops-qi-extra > .collapse { align-self: stretch }
+.ops-qi-large .ops-qi-extra { padding-left: calc(2.6rem + 0.75rem) }
+/* A waiting row keeps its (closed) settings panel mounted for the open
+   animation; closed, it must not add a gap under the row. */
+.ops-qi-extra:has(> .collapse[data-open='false']:only-child) { margin-top: 0 }
+.ops-qi-fail {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  font-size: 0.8125rem;
+  color: var(--color-error);
+}
+.ops-qi-fail > svg { flex-shrink: 0; margin-top: 0.2rem }
 .ops-qi-source { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--color-ink); opacity: 0.85 }
 .ops-qi-error {
   margin-top: 0.5rem;
@@ -318,7 +406,8 @@
   border: 1px solid rgb(242 122 132 / 0.2);
   border-radius: var(--radius-sm);
   padding: 0.45rem 0.6rem;
-  word-break: break-word;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
 }
 .ops-qi-actions {
   display: flex;
@@ -329,16 +418,19 @@
   justify-content: flex-end;
   max-width: 50%;
 }
-.ops-lanes .ops-qi > .flex { flex-wrap: wrap }
-/* In the narrow lanes the actions get their own row under the content. */
+.ops-lanes .ops-qi-main { flex-wrap: wrap }
+/* In the lanes the actions get their own row under the content: one line,
+   reorder and settings on the left, remove on the far right. */
 .ops-lanes .ops-qi-actions {
   flex-basis: 100%;
   max-width: 100%;
+  flex-wrap: nowrap;
   justify-content: flex-start;
-  padding-left: 2.65rem;
-  margin-top: 0.15rem;
+  padding-left: calc(1.9rem + 0.75rem);
+  margin-top: -0.1rem;
 }
-.ops-lanes .ops-qi-large .ops-qi-actions { padding-left: 3.4rem }
+.ops-lanes .ops-qi-large .ops-qi-actions { padding-left: calc(2.6rem + 0.75rem) }
+.ops-lanes .ops-qi-remove { margin-left: auto }
 .ops-why .ui-disclosure-btn { padding-left: 0; color: var(--color-gold) }
 .ops-log-wrap { position: relative }
 .ops-log {
@@ -350,13 +442,15 @@
   white-space: pre-wrap;
   word-break: break-word;
   padding: 0.6rem 0.7rem;
-  padding-top: 2.4rem;
   border-radius: var(--radius-sm);
   background: var(--color-abyss);
   border: 1px solid rgb(216 178 99 / 0.08);
   color: color-mix(in srgb, var(--color-ink) 85%, var(--color-muted));
 }
+/* Room for the Copy button only when there is one. */
+.ops-log-wrap:has(> .ops-log-copy) > .ops-log { padding-top: 2.4rem }
 .ops-log-copy { position: absolute; top: 0.4rem; right: 0.4rem }
+
 
 /* ======================================================================
    Watch: radar hero
@@ -418,14 +512,23 @@
   --blip: var(--color-gold);
   position: absolute;
   translate: -50% -50%;
+  /* A true circle around the 22px avatar (inline line-height made it 22x26
+     and the ring an egg), with the hit area grown past 24px below. */
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  line-height: 0;
   border-radius: 50%;
   padding: 0;
-  box-shadow: 0 0 0 2px var(--color-abyss), 0 0 0 3px var(--blip);
+  background: var(--color-abyss);
+  box-shadow: 0 0 0 1.5px var(--blip);
   transition: scale var(--dur-2) var(--ease-spring);
   z-index: 2;
   animation: ops-blip-flash 3s linear infinite;
   animation-delay: var(--blip-delay, 0s);
 }
+.ops-blip .ui-avatar { line-height: 1 }
 .ops-blip:hover, .ops-blip:focus-visible { scale: 1.25; z-index: 3 }
 .ops-blip[data-tone='off'] { --blip: rgb(187 165 168 / 0.35); animation: none; filter: grayscale(0.8) opacity(0.6) }
 .ops-blip[data-tone='error'] { --blip: var(--color-error); animation: none }
@@ -452,6 +555,10 @@
   padding-top: 0.25rem;
 }
 .ops-radar-stats > div { min-width: 5rem }
+.ops-radar-stats .t-kpi { line-height: 1.15; margin-top: 0.3rem }
+.ops-radar-skel { display: flex; align-items: flex-start; gap: 0.9rem; padding-top: 0.15rem }
+.ops-kpi-skel { display: inline-block; vertical-align: middle; margin-top: 0.2rem }
+.ops-radar-aside { display: inline-flex; margin-left: auto }
 .ops-radar-now {
   display: flex;
   align-items: center;
@@ -488,7 +595,8 @@
   color: var(--color-success);
   background: var(--tint-success);
 }
-.ops-onair[data-state='busy'] .ops-onair-tag { color: #fff; background: var(--color-live); box-shadow: 0 0 18px -4px var(--color-live) }
+/* A darker red than the live dot so the white 10px tag passes 4.5:1. */
+.ops-onair[data-state='busy'] .ops-onair-tag { color: #fff; background: #b8303a; box-shadow: 0 0 18px -4px var(--color-live) }
 .ops-onair[data-state='off'] .ops-onair-tag { color: var(--color-muted); background: var(--color-raised) }
 .ops-onair-dot {
   position: relative;
@@ -510,6 +618,7 @@
 
 /* ---------- AI chip ---------- */
 .ops-ai { max-width: 100% }
+.ops-ai-chip:focus-visible { outline: 2px solid var(--color-gold); outline-offset: 2px }
 .ops-ai .ui-disclosure-btn { padding: 0; width: auto }
 .ops-ai-chip {
   display: inline-flex;
@@ -556,39 +665,57 @@
 .ops-watch-layout[data-rail='closed'] .ops-events-head { padding: 0.5rem; border-bottom: 0 }
 .ops-events-body { overflow-y: auto; padding: 0.9rem }
 
+/* Channels flow into independent columns, so a long tile never leaves a
+   hole beside a short one (a grid row is as tall as its tallest cell). */
+.ops-channels-wrap { display: flex; flex-direction: column; gap: 1rem; min-width: 0 }
 .ops-channels {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 520px), 1fr));
-  gap: 1rem;
-  align-items: start;
+  columns: 2 520px;
+  column-gap: 1rem;
 }
-.ops-channel-cell { min-width: 0 }
+.ops-channel-cell { min-width: 0; break-inside: avoid; margin-bottom: 1rem; display: block }
+.ops-channels > .ops-channel-cell:last-child { margin-bottom: 0 }
+/* An odd count would leave the second column one tile short, a hole beside
+   or under it. The last tile spans both columns instead (the ones above
+   still balance in pairs, and a lone channel takes the full width); with
+   one column this changes nothing. */
+.ops-channels > .ops-channel-cell:last-child:nth-child(odd) { column-span: all }
+/* "Watch a channel" after the channels: a slim full-width bar, not a cell. */
 .ops-add-tile {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 0.6rem;
-  min-height: 11rem;
-  padding: 1.5rem;
+  gap: 0.9rem;
+  width: 100%;
+  min-height: 64px;
+  padding: 0.75rem 1.1rem;
   border-radius: var(--radius-lg);
-  border: 1.5px dashed rgb(216 178 99 / 0.35);
-  background: radial-gradient(80% 80% at 50% 0%, rgb(216 178 99 / 0.06), transparent 70%);
+  border: 1.5px dashed rgb(216 178 99 / 0.32);
+  background: linear-gradient(90deg, rgb(216 178 99 / 0.06), transparent 60%);
   color: var(--color-muted);
+  text-align: left;
+  transition: border-color var(--dur-2), background var(--dur-2);
 }
-.ops-add-tile:hover { border-style: solid }
+.ops-add-tile:hover { border-style: solid; border-color: rgb(216 178 99 / 0.55); background: linear-gradient(90deg, rgb(216 178 99 / 0.1), transparent 70%) }
+.ops-add-tile:active { transform: scale(0.995) }
+.ops-add-arrow { margin-left: auto; color: var(--color-gold); transition: transform var(--dur-2) var(--ease-out) }
+.ops-add-tile:hover .ops-add-arrow { transform: translateX(3px) }
 .ops-add-orb {
   display: grid;
   place-items: center;
-  width: 48px;
-  height: 48px;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   color: #2a1a08;
   background: var(--grad-solar);
-  box-shadow: 0 0 24px -4px rgb(216 178 99 / 0.6);
+  box-shadow: 0 0 18px -4px rgb(216 178 99 / 0.6);
   transition: transform var(--dur-3) var(--ease-spring);
 }
-.ops-add-tile:hover .ops-add-orb { transform: rotate(90deg) scale(1.08) }
+.ops-add-tile:hover .ops-add-orb { transform: rotate(90deg) scale(1.06) }
+
+/* Recent activity above the channels (narrower pages). */
+.ops-events-card { padding: 1rem 1.15rem }
+.ops-events-card-head { display: flex; align-items: center; gap: 0.75rem; min-height: 32px; margin-bottom: 0.75rem }
+.ops-events-card-head > :last-child:not(:first-child) { margin-left: auto }
 
 .ops-tile {
   --pc: var(--color-gold);
@@ -600,6 +727,7 @@
   overflow: hidden;
   transition: border-color var(--dur-2), box-shadow var(--dur-2);
 }
+/* The platform is a quiet edge; the avatar badge already names it. */
 .ops-tile::before {
   content: '';
   position: absolute;
@@ -608,13 +736,12 @@
   bottom: 0;
   width: 3px;
   background: var(--pc);
-  box-shadow: 0 0 14px var(--pc);
-  opacity: 0.9;
+  opacity: 0.4;
 }
 .ops-tile[data-platform='youtube'] { --pc: var(--ops-youtube) }
 .ops-tile[data-platform='twitch'] { --pc: var(--ops-twitch) }
 .ops-tile[data-platform='kick'] { --pc: var(--ops-kick) }
-.ops-tile[data-on='false']::before { opacity: 0.3; box-shadow: none }
+.ops-tile[data-on='false']::before { opacity: 0.18 }
 .ops-tile:hover { border-color: rgb(216 178 99 / 0.28) }
 .ops-tile-head {
   display: flex;
@@ -660,11 +787,16 @@
 .ops-tile-counts {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.25rem;
-  flex: 1;
+  gap: 0.5rem;
   min-width: 0;
+  margin: 0;
+  padding: 0.6rem 1rem 0.65rem 1.15rem;
+  border-bottom: 1px solid var(--color-hairline);
+  background: color-mix(in srgb, var(--color-abyss) 35%, transparent);
 }
-.ops-tile-counts > div { min-width: 0 }
+/* "9 found": the number first, its label beside it. */
+.ops-tile-counts > div { min-width: 0; display: flex; flex-direction: row-reverse; align-items: baseline; justify-content: flex-end; gap: 0.45rem }
+.ops-tile-counts dt { min-width: 0; overflow: hidden; text-overflow: ellipsis }
 .ops-tile-counts dt {
   display: flex;
   align-items: center;
@@ -677,16 +809,59 @@
 }
 .ops-tile-counts dd {
   font-family: var(--font-cine);
-  font-size: 1.35rem;
+  font-size: 1.15rem;
   font-weight: 600;
   color: var(--color-ink);
   line-height: 1.3;
+  margin: 0;
 }
 .ops-tile-counts [data-k='clipped'] dd { color: var(--color-gold-strong) }
 .ops-count-skel { display: inline-block; width: 1.5rem; height: 1rem; border-radius: 4px; vertical-align: middle }
 
 /* WatchCard inside a tile (className hooks only; the card is test-pinned) */
-.ops-wc { padding: 0.9rem 1rem 1rem 1.15rem }
+.ops-wc-head {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+  padding: 0.9rem 1rem 0.9rem 1.15rem;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--pc, var(--color-gold)) 5%, transparent), transparent 55%);
+  border-bottom: 1px solid var(--color-hairline);
+}
+.ops-wc-id { min-width: 0; flex: 1 1 12rem }
+.ops-wc-name {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  font-weight: 600;
+  font-size: 1.02rem;
+  color: var(--color-ink);
+}
+.ops-wc-name .ops-wc-watching { flex-shrink: 0 }
+.ops-wc-actions { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; margin-left: auto }
+.ops-wc-body { padding: 0.9rem 1rem 1rem 1.15rem }
+.ops-wc-panel {
+  padding: 0.9rem 1rem;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-abyss) 45%, transparent);
+  border: 1px solid rgb(216 178 99 / 0.1);
+}
+/* The panels bring their own "separator" top rule; inside a box it is noise. */
+.ops-wc-panel > .border-t:first-child { margin-top: 0; padding-top: 0; border-top: 0 }
+.ops-field-inline { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; font-size: 0.875rem }
+.ops-field-inline > .label { margin: 0 }
+.ops-wc-none {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.7rem 0.85rem;
+  font-size: 0.8125rem;
+  color: var(--color-muted);
+  border: 1px dashed rgb(216 178 99 / 0.14);
+  border-radius: var(--radius-md);
+}
+.ops-wc-none > svg { color: var(--color-gold); flex-shrink: 0 }
 .ops-wc-platform {
   font-size: 10px;
   font-weight: 600;
@@ -716,26 +891,31 @@
 .ops-wc-switch {
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.5rem;
+  min-width: 4.6rem;
   font-size: 0.8125rem;
-  padding: 0.25rem 0.6rem;
+  padding: 0 0.6rem 0 0.35rem;
+  height: 32px;
   border-radius: 999px;
   border: 1px solid var(--color-hairline);
   background: color-mix(in srgb, var(--color-raised) 50%, transparent);
-  cursor: pointer;
 }
+.ops-wc-switch .ui-toggle-row { gap: 0 }
 .ops-wc-creator {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.6rem;
   flex-wrap: wrap;
   font-size: 0.8125rem;
-  padding: 0.55rem 0.75rem;
+  padding: 0.5rem 0.5rem 0.5rem 0.75rem;
   border-radius: var(--radius-md);
   background: linear-gradient(90deg, var(--tint-gold), transparent 70%);
   border: 1px solid rgb(216 178 99 / 0.18);
 }
 .ops-wc-setup {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   font-size: 0.8125rem;
   color: var(--color-gold-strong);
   padding: 0.5rem 0.75rem;
@@ -750,6 +930,40 @@
   color: var(--color-gold-strong);
   background: var(--tint-gold);
 }
+.ops-wc-item-title {
+  display: block;
+  max-width: 100%;
+  min-height: 24px;
+  padding: 0.1rem 0;
+  text-align: left;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-radius: var(--radius-sm);
+  transition: color var(--dur-1);
+}
+.ops-wc-item-title:hover { color: var(--color-gold-strong); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgb(216 178 99 / 0.4) }
+.ops-wc-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15rem 0.6rem;
+  font-size: 0.75rem;
+  color: var(--color-muted);
+}
+.ops-delivery {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-raised) 45%, transparent);
+  border: 1px solid var(--color-hairline);
+}
+.ops-delivery > span:not(:first-child) { display: inline-flex; align-items: center; gap: 0.15rem }
 .ops-wc-item {
   padding: 0.55rem 0.75rem;
   border-radius: var(--radius-md);
@@ -805,10 +1019,12 @@
   align-items: center;
   gap: 0.25rem;
   max-width: 100%;
-  margin-top: 0.15rem;
+  min-height: 24px;
+  margin-top: 0;
   font-size: 11px;
   color: var(--color-gold);
 }
+
 .ops-tl-link:hover { color: var(--color-gold-strong); text-decoration: underline }
 
 /* ---------- add-channel sheet ---------- */
@@ -865,6 +1081,51 @@
   border-color: transparent;
   scale: 1.08;
 }
+/* ---------- settings panels (watched channel, queued video) ---------- */
+.ops-ticks { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem }
+.ops-tick {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 28px;
+  font-size: 0.875rem;
+  color: var(--color-ink);
+  cursor: pointer;
+}
+.ops-tick > input { flex-shrink: 0 }
+.ops-tick:has(> input:disabled) { opacity: 0.55; cursor: default }
+/* Fields in a grid: one control height, labels above, controls aligned on
+   their bottom edge even when a label wraps to two lines. */
+.ops-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 11rem), 1fr));
+  gap: 0.9rem 1rem;
+  align-items: end;
+}
+.ops-field { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; font-size: 0.875rem }
+.ops-field > .label { margin: 0; line-height: 1.35 }
+.ops-field .input { width: 100% }
+.ops-field-wide { grid-column: span 2 }
+@media (max-width: 640px) { .ops-field-wide { grid-column: 1 / -1 } }
+.ops-time-any {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  text-align: left;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+.ops-time-any:hover { color: var(--color-ink) }
+.ops-time-any > svg { color: var(--color-gold); flex-shrink: 0 }
+.ops-platform-row { display: flex; align-items: center; gap: 0.5rem 1.25rem; flex-wrap: wrap; padding: 0.35rem 0 }
+.ops-platform-row + .ops-platform-row { border-top: 1px solid var(--color-hairline) }
+
+/* The add-channel sheet: room under the stepper labels. */
+/* (.ui-steps resets its margin, which beat the sheet's space-y gap: the step
+   content started 9px under the labels.) */
+.ops-addsheet > .ui-steps { padding-bottom: 0.9rem; margin-bottom: 1.25rem; border-bottom: 1px solid var(--color-hairline) }
+
 .ops-subfields {
   padding: 0.75rem;
   border-radius: var(--radius-md);
@@ -878,17 +1139,51 @@
    ====================================================================== */
 .ops-creators {
   display: grid;
-  grid-template-columns: minmax(300px, 400px) minmax(0, 1fr);
+  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
   gap: 1.5rem;
   align-items: start;
 }
-@media (max-width: 1100px) {
-  .ops-creators { grid-template-columns: minmax(0, 1fr) }
+.ops-creators[data-cols='1'] { grid-template-columns: minmax(0, 1fr) }
+.ops-creators-detail { min-width: 0; scroll-margin-top: 1rem }
+/* Two columns: the list stays in view (scrolling on its own) while a long
+   detail scrolls past it, instead of leaving an empty column. */
+.ops-creators[data-cols='2'] .ops-clist {
+  position: sticky;
+  top: 1rem;
+  max-height: calc(100vh - var(--topbar-h, 52px) - 2.5rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px 6px 6px 2px;
+  margin: -2px -6px -6px -2px;
 }
-.ops-creators-detail { position: sticky; top: 1rem; min-width: 0 }
 .ops-clist { display: flex; flex-direction: column; gap: 0.75rem; min-width: 0 }
-.ops-clist-tools { display: flex; flex-direction: column; gap: 0.6rem }
-.ops-clist-rows { display: flex; flex-direction: column; gap: 0.5rem }
+.ops-clist-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.ops-creators[data-cols='2'] .ops-clist-tools {
+  position: sticky;
+  top: -2px;
+  z-index: 2;
+  padding-bottom: 0.5rem;
+  /* Opaque: with the controls wrapped onto two rows a fading background let
+     the first row's stats show through beside List / Leaderboard. The fade
+     sits below the bar instead. */
+  background: var(--color-base);
+}
+.ops-creators[data-cols='2'] .ops-clist-tools::after {
+  content: '';
+  position: absolute;
+  inset: 100% 0 auto;
+  height: 10px;
+  background: linear-gradient(var(--color-base), transparent);
+  pointer-events: none;
+}
+.ops-clist-controls { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap }
+.ops-clist-sort { display: inline-flex; align-items: center; gap: 0.5rem }
+.ops-clist-controls > :only-child { margin-left: auto }
+.ops-clist-rows { display: flex; flex-direction: column; gap: 0.45rem }
 .ops-crow-wrap { position: relative; border-radius: var(--radius-lg) }
 .ops-crow {
   display: flex;
@@ -896,7 +1191,7 @@
   gap: 0.8rem;
   width: 100%;
   text-align: left;
-  padding: 0.85rem 2.6rem 0.85rem 0.9rem;
+  padding: 0.7rem 2.6rem 0.7rem 0.8rem;
   border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--color-surface) 85%, transparent);
   border: 1px solid var(--color-hairline);
@@ -917,8 +1212,31 @@
 }
 .ops-crow-wrap:hover .ops-crow-del,
 .ops-crow-del:focus-visible { opacity: 1 }
+.ops-crow-name { display: flex; align-items: center; gap: 0.4rem; min-width: 0; flex-wrap: wrap }
+.ops-crow-platforms { display: inline-flex; gap: 0.25rem; flex-wrap: wrap }
+.ops-crow-stats {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--color-muted);
+  min-width: 0;
+}
+.ops-crow-meter { flex: 1; min-width: 2.5rem; max-width: 7rem }
 
-.ops-board { display: flex; flex-direction: column; gap: 0.35rem }
+.ops-board { display: flex; flex-direction: column; gap: 0.35rem; margin: 0; padding: 0; list-style: none }
+.ops-board-note {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--color-muted);
+  border-radius: var(--radius-md);
+  border: 1px dashed rgb(216 178 99 / 0.18);
+}
+.ops-board-note > svg { color: var(--color-gold); flex-shrink: 0 }
 .ops-board-row {
   display: flex;
   align-items: center;
@@ -948,17 +1266,20 @@
 .ops-board-rank[data-top='1'] { color: #2a1a08; background: var(--grad-solar); border-color: transparent; box-shadow: 0 0 14px -2px rgb(216 178 99 / 0.7) }
 .ops-board-rank[data-top='2'] { color: var(--color-ink); background: linear-gradient(135deg, #d9d2cc, #8e8580); border-color: transparent; color: #1a1214 }
 .ops-board-rank[data-top='3'] { background: linear-gradient(135deg, #d39a6a, #8a5530); border-color: transparent; color: #1a0e06 }
-.ops-board-bars { display: flex; flex-direction: column; gap: 3px; margin-top: 0.35rem }
+.ops-board-bars { display: flex; flex-direction: column; gap: 3px; margin-top: 0.4rem }
+/* A faint track so a zero bar reads as zero, not as a gap. */
+.ops-board-track { display: block; height: 5px; border-radius: 999px; background: rgb(216 178 99 / 0.08); overflow: hidden }
+.ops-board-track[data-k='score'] { height: 3px; background: rgb(143 36 69 / 0.18) }
 .ops-board-bar {
   display: block;
-  height: 5px;
+  height: 100%;
   border-radius: 999px;
   transform-origin: left;
   transition: transform 900ms var(--ease-out-expo);
   transition-delay: calc(var(--i, 0) * 50ms);
 }
 .ops-board-bar[data-k='clips'] { background: var(--grad-foil) }
-.ops-board-bar[data-k='score'] { height: 3px; background: linear-gradient(90deg, var(--color-accent), var(--color-accent-strong)) }
+.ops-board-bar[data-k='score'] { background: linear-gradient(90deg, var(--color-accent), var(--color-accent-strong)) }
 
 .ops-cdetail { padding: 0 !important; overflow: hidden }
 .ops-cdetail-head {
@@ -970,8 +1291,20 @@
   border-bottom: 1px solid var(--color-hairline);
 }
 .ops-cdetail > [role='tablist'] { padding: 0 1.25rem }
-.ops-cdetail-body { padding: 1.25rem }
-.ops-cstats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 0.75rem }
+.ops-cdetail-learn { flex-shrink: 0; align-self: center; display: inline-flex }
+.ops-cdetail-learn .ui-toggle-row { align-items: center }
+.ops-cdetail-body { padding: 1.25rem; container-type: inline-size; container-name: cdetail }
+/* Five stats in one row; three over two when the card is narrow. */
+.ops-cstats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.75rem }
+@container cdetail (max-width: 700px) {
+  .ops-cstats { grid-template-columns: repeat(6, minmax(0, 1fr)) }
+  .ops-cstats > .ops-cstat { grid-column: span 2 }
+  .ops-cstats > .ops-cstat:nth-child(n + 4) { grid-column: span 3 }
+}
+.ops-cstat-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.ops-cadd { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap }
+.ops-cadd-platform.input { width: auto; min-width: 8rem; flex: 0 0 auto }
+.ops-cadd-name.input { flex: 1 1 14rem; min-width: 0; max-width: 28rem }
 .ops-cstat {
   padding: 0.75rem 0.9rem;
   border-radius: var(--radius-md);
@@ -1007,6 +1340,11 @@
   transition: background var(--dur-1);
 }
 .ops-fact:hover { background: color-mix(in srgb, var(--color-raised) 40%, transparent) }
+/* One delete per fact, shown where the pointer or focus is, not 19 red bins. */
+.ops-fact-del { opacity: 0; transition: opacity var(--dur-2) }
+.ops-fact:hover .ops-fact-del,
+.ops-fact:focus-within .ops-fact-del { opacity: 1 }
+@media (hover: none) { .ops-fact-del { opacity: 0.7 } }
 .ops-fact-text { flex: 1; min-width: 0; font-size: 0.875rem; color: var(--color-ink) }
 .ops-fact[data-state='candidate'] .ops-fact-text,
 .ops-fact[data-state='dormant'] .ops-fact-text { color: var(--color-muted) }
@@ -1027,6 +1365,11 @@
   background: color-mix(in srgb, var(--color-abyss) 50%, transparent);
   border: 1px solid var(--color-hairline);
 }
+/* The portrait watermark preview has no size of its own and sits in an auto
+   grid column, so it collapsed to a dot. Give it the 117px width its scale
+   maths assumes. */
+.ops-wm [aria-label='Watermark preview']:not(.aspect-video) { width: 117px; max-height: none; flex-shrink: 0 }
+
 .ops-pref {
   display: flex;
   gap: 0.75rem;
@@ -1171,8 +1514,12 @@
   .ops-radar-hero { justify-content: center }
   .ops-band { padding: 1.25rem }
   .ops-band-actions { margin-left: 0 }
+}
+/* The platform picker stays a row of three until it truly can't fit. */
+@media (max-width: 460px) {
   .ops-choice-row { grid-template-columns: minmax(0, 1fr) }
 }
+
 
 @media (prefers-reduced-motion: reduce) {
   .ops-band-ring::before,
@@ -1184,6 +1531,8 @@
   .ops-orp-prominent .ops-orp-icon,
   .ops-qi[data-status='running'] .ops-qi-icon { animation: none }
   .ops-board-bar, .ops-bias-track > span { transition: none }
+  .ops-add-orb, .ops-add-arrow { transition: none }
+  .ops-add-tile:hover .ops-add-orb, .ops-add-tile:hover .ops-add-arrow { transform: none }
 }
 html[data-motion='reduced'] .ops-board-bar,
 html[data-motion='reduced'] .ops-bias-track > span { transition: none }

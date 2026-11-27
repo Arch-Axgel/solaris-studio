@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { api } from '../../lib/api'
+import { api, errorText } from '../../lib/api'
 import type { QueueJob } from '../../lib/types'
 import type { JobProgress } from '../../lib/jobProgress'
 import { etaSeconds, formatEta } from '../../lib/jobProgress'
@@ -9,7 +9,7 @@ import { t } from '../../lib/i18n'
 import { useLocalAI } from '../../lib/useAIStatus'
 import OpenRouterPrompt from '../OpenRouterPrompt'
 import { Icon, type IconName } from '../icons'
-import { Button, Disclosure, IconButton, ProgressBar, StatusChip, toast } from '../ui'
+import { Badge, Button, Disclosure, IconButton, ProgressBar, StatusChip, toast } from '../ui'
 
 /** A job that failed in a request to the local Ollama runtime: the address it
  *  listens on or its API paths are in the message. Only then is a cloud
@@ -35,6 +35,12 @@ const SOURCE_ICON: Record<string, IconName> = {
   Link: 'link'
 }
 
+/** A log that can't be read: a run that was cleared has no log any more,
+ *  which is not an error worth an HTTP status line. */
+function logGone(e: unknown): boolean {
+  return (e instanceof Error ? e.message : String(e)).startsWith('404 ')
+}
+
 const CHIP: Record<string, 'running' | 'queued' | 'done' | 'failed' | 'idle'> = {
   running: 'running',
   queued: 'queued',
@@ -55,7 +61,8 @@ export default function QueueItem({
   now,
   onChanged,
   onOpenInStudio,
-  large = false
+  large = false,
+  clips
 }: {
   job: QueueJob
   /** 1-based position among waiting videos; 0 when not applicable. */
@@ -68,12 +75,17 @@ export default function QueueItem({
   onOpenInStudio?: (videoId: string) => void
   /** The Processing lane's big card. */
   large?: boolean
+  /** How many clips a finished video produced, once the page knows. */
+  clips?: number | null
 }): JSX.Element {
   const [busy, setBusy] = useState(false)
   const localAI = useLocalAI()
   const [open, setOpen] = useState(false)
   const [log, setLog] = useState<string | null>(null)
   const [why, setWhy] = useState<string | null>(null)
+  // The run's log was cleared from the engine (404): said in the log box
+  // itself, not as an error under it.
+  const [gone, setGone] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const run = async (fn: () => Promise<unknown>): Promise<void> => {
@@ -83,7 +95,7 @@ export default function QueueItem({
       await fn()
       onChanged()
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(errorText(e))
     } finally {
       setBusy(false)
     }
@@ -97,6 +109,7 @@ export default function QueueItem({
   const eta = running && live ? etaSeconds(live, now) : null
   const took = ranFor(job)
   const pct = running && live ? Math.round(live.fraction * 100) : 0
+  const noClips = job.status === 'done' && clips === 0
 
   const loadWhy = async (): Promise<void> => {
     if (why !== null) return
@@ -105,7 +118,8 @@ export default function QueueItem({
       setWhy(res.log)
     } catch (e) {
       setWhy('')
-      setError(e instanceof Error ? e.message : String(e))
+      if (logGone(e)) setGone(true)
+      else setError(errorText(e))
     }
   }
 
@@ -116,22 +130,23 @@ export default function QueueItem({
       .catch(() => toast({ title: t('Could not copy'), tone: 'error' }))
   }
 
+  const showWhy = failed && Boolean(job.log_path)
+  const extras = showWhy || log !== null || (waiting && job.type === 'process') || running || Boolean(error)
+
   return (
     <article
       className={`ops-qi ${large ? 'ops-qi-large' : ''}`}
       data-status={job.status}
       aria-label={jobLabel(job)}
     >
-      <div className="flex items-start gap-3">
+      <div className="ops-qi-main">
         <span className="ops-qi-icon" aria-hidden>
           <Icon name={ICON[job.status] ?? 'clock'} size={large ? 20 : 16} />
         </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <p className={`ops-qi-title truncate min-w-0 ${large ? 't-md' : ''}`} title={job.url || jobLabel(job)}>
-              {jobLabel(job)}
-            </p>
-          </div>
+        <div className="ops-qi-body">
+          <p className={`ops-qi-title ${large ? 't-md' : ''}`} title={job.url || jobLabel(job)}>
+            {jobLabel(job)}
+          </p>
           <div className="ops-qi-meta">
             {source && (
               <span className="ops-qi-source">
@@ -139,8 +154,19 @@ export default function QueueItem({
                 {t(source)}
               </span>
             )}
-            {job.channel && <span className="truncate">{job.channel}</span>}
-            {!running && !waiting && <StatusChip status={CHIP[job.status] ?? 'idle'} label={job.status === 'cancelled' ? t('Cancelled') : undefined} />}
+            {job.channel && <span className="ops-qi-channel">{job.channel}</span>}
+            {job.status === 'cancelled' ? (
+              <Badge tone="muted" size="xs" icon="ban">
+                {t('Cancelled')}
+              </Badge>
+            ) : (
+              !running && !waiting && <StatusChip status={CHIP[job.status] ?? 'idle'} />
+            )}
+            {noClips && (
+              <Badge tone="warn" size="xs" icon="info" title={t('This video finished, but none of its moments made it into a clip.')}>
+                {t('No clips')}
+              </Badge>
+            )}
           </div>
 
           {running && live && (
@@ -158,16 +184,17 @@ export default function QueueItem({
             </div>
           )}
 
-          {waiting && (
-            <p className="text-sm text-muted mt-1">
-              {job.interrupted
-                ? t('Restarted after an interruption - resumes from its last finished stage')
-                : t('Waiting')}
+          {/* A plain waiting row says nothing the lane title doesn't; only a
+              row that came back from an interruption has news. */}
+          {waiting && job.interrupted ? (
+            <p className="ops-qi-note">
+              <Icon name="retry" size={12} />
+              {t('Restarted after an interruption - resumes from its last finished stage')}
             </p>
-          )}
+          ) : null}
 
           {took && !running && (
-            <p className="text-sm text-muted mt-1">
+            <p className="ops-qi-took">
               {job.status === 'done' ? t('Finished in') : t('Ran for')} <span className="tabular">{took}</span>
               {job.attempts > 1 && ` · ${job.attempts} ${t('attempts')}`}
             </p>
@@ -196,7 +223,7 @@ export default function QueueItem({
           )}
 
           {chips.length > 0 && (
-            <div className="flex gap-1.5 flex-wrap mt-2">
+            <div className="ops-qi-chips">
               {chips.map((c) => (
                 <span key={c} className="ops-chip">
                   {c}
@@ -204,65 +231,6 @@ export default function QueueItem({
               ))}
             </div>
           )}
-
-          {failed && job.log_path && (
-            <div className="ops-why mt-2">
-              <Disclosure
-                summary={
-                  <span className="inline-flex items-center gap-1.5 text-sm">
-                    <Icon name="help" size={14} />
-                    {t('Why did this fail?')}
-                  </span>
-                }
-                onOpenChange={(o) => {
-                  if (o) void loadWhy()
-                }}
-              >
-                <div className="ops-log-wrap">
-                  {why === null ? (
-                    <div className="skeleton" style={{ height: 64 }} aria-hidden />
-                  ) : (
-                    <>
-                      <pre className="ops-log">{why || t('No log was recorded for this run.')}</pre>
-                      {why && (
-                        <Button size="sm" variant="subtle" icon="copy" className="ops-log-copy" onClick={() => copy(why)}>
-                          {t('Copy')}
-                        </Button>
-                      )}
-                    </>
-                  )}
-                </div>
-              </Disclosure>
-            </div>
-          )}
-
-          {log !== null && (
-            <div className="ops-log-wrap mt-2 anim-fade">
-              <pre className="ops-log">{log || t('No log was recorded for this run.')}</pre>
-              {log && (
-                <Button size="sm" variant="subtle" icon="copy" className="ops-log-copy" onClick={() => copy(log)}>
-                  {t('Copy')}
-                </Button>
-              )}
-            </div>
-          )}
-
-          {waiting && job.type === 'process' && (
-            <div className="collapse" data-open={open ? 'true' : 'false'}>
-              <div>{open && <QueueItemSettings job={job} onSaved={onChanged} />}</div>
-            </div>
-          )}
-          {/* The running video's settings are visible but not editable.
-              Showing nothing at all read as a missing feature; the truth is
-              that changing them mid-run would render some of this video's
-              clips one way and the rest another. */}
-          {running && (
-            <p className="text-xs text-muted mt-2 inline-flex items-center gap-1.5">
-              <Icon name="pin" size={12} />
-              {t('Settings are locked while this video processes.')}
-            </p>
-          )}
-          {error && <p className="text-sm text-error mt-1.5 anim-shake">{error}</p>}
         </div>
 
         <div className="ops-qi-actions">
@@ -333,17 +301,30 @@ export default function QueueItem({
             </Button>
           )}
 
-          {job.status === 'done' && job.video_id && onOpenInStudio && (
-            <Button
-              size="sm"
-              variant="gold"
-              icon="film"
-              title={t('Open the clips from this video')}
-              onClick={() => onOpenInStudio(job.video_id)}
-            >
-              {t('Clips')}
-            </Button>
-          )}
+          {job.status === 'done' &&
+            job.video_id &&
+            onOpenInStudio &&
+            (noClips ? (
+              <Button
+                size="sm"
+                variant="subtle"
+                icon="help"
+                title={t('See why this video gave no clips')}
+                onClick={() => onOpenInStudio(job.video_id)}
+              >
+                {t('See why')}
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="gold"
+                icon="film"
+                title={t('Open the clips from this video')}
+                onClick={() => onOpenInStudio(job.video_id)}
+              >
+                {t('Clips')}
+              </Button>
+            ))}
 
           {!running && job.log_path && (
             <IconButton
@@ -360,7 +341,10 @@ export default function QueueItem({
                   const res = await api.jobLog(job.id)
                   setLog(res.log)
                 } catch (e) {
-                  setError(e instanceof Error ? e.message : String(e))
+                  if (logGone(e)) {
+                    setGone(true)
+                    setLog('')
+                  } else setError(errorText(e))
                 }
               }}
             />
@@ -371,6 +355,7 @@ export default function QueueItem({
               size="sm"
               icon="x"
               tone="error"
+              className="ops-qi-remove"
               label={t('Remove from the queue')}
               disabled={busy}
               onClick={() => void run(() => api.deleteJob(job.id))}
@@ -378,6 +363,74 @@ export default function QueueItem({
           )}
         </div>
       </div>
+
+      {extras && (
+        <div className="ops-qi-extra">
+          {showWhy && (
+            <div className="ops-why">
+              <Disclosure
+                summary={
+                  <span className="inline-flex items-center gap-1.5 text-sm">
+                    <Icon name="help" size={14} />
+                    {job.status === 'cancelled' ? t('What happened?') : t('Why did this fail?')}
+                  </span>
+                }
+                onOpenChange={(o) => {
+                  if (o) void loadWhy()
+                }}
+              >
+                <div className="ops-log-wrap">
+                  {why === null ? (
+                    <div className="skeleton" style={{ height: 64 }} aria-hidden />
+                  ) : (
+                    <>
+                      <pre className="ops-log">{why || (gone ? t('This run’s log is no longer available.') : t('No log was recorded for this run.'))}</pre>
+                      {why && (
+                        <Button size="sm" variant="subtle" icon="copy" className="ops-log-copy" onClick={() => copy(why)}>
+                          {t('Copy')}
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </Disclosure>
+            </div>
+          )}
+
+          {log !== null && (
+            <div className="ops-log-wrap anim-fade">
+              <pre className="ops-log">{log || (gone ? t('This run’s log is no longer available.') : t('No log was recorded for this run.'))}</pre>
+              {log && (
+                <Button size="sm" variant="subtle" icon="copy" className="ops-log-copy" onClick={() => copy(log)}>
+                  {t('Copy')}
+                </Button>
+              )}
+            </div>
+          )}
+
+          {waiting && job.type === 'process' && (
+            <div className="collapse" data-open={open ? 'true' : 'false'}>
+              <div>{open && <QueueItemSettings job={job} onSaved={onChanged} />}</div>
+            </div>
+          )}
+          {/* The running video's settings are visible but not editable.
+              Showing nothing at all read as a missing feature; the truth is
+              that changing them mid-run would render some of this video's
+              clips one way and the rest another. */}
+          {running && (
+            <p className="text-xs text-muted inline-flex items-center gap-1.5">
+              <Icon name="pin" size={12} />
+              {t('Settings are locked while this video processes.')}
+            </p>
+          )}
+          {error && (
+            <p className="ops-qi-fail anim-shake" role="alert">
+              <Icon name="alert" size={13} />
+              {error}
+            </p>
+          )}
+        </div>
+      )}
     </article>
   )
 }

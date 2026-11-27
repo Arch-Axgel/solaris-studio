@@ -152,6 +152,7 @@ export default function Dashboard({
         eyebrow={t('MAKE')}
         title={t('Create')}
         subtitle={t('Paste links or drop files. Pick a preset, fine-tune, generate.')}
+        icon="plus"
         vtName="page-title"
         actions={
           <>

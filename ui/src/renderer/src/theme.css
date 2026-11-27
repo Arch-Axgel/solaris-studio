@@ -75,10 +75,35 @@
   --tint-error: rgb(242 122 132 / 0.12);
   --tint-gold: rgb(216 178 99 / 0.12);
   --tint-accent: rgb(143 36 69 / 0.22);
+  /* One z-index scale for the shell (use the tokens, never a raw number).
+     Native <dialog>.showModal(), [popover] and <Overlay>/<FloatingLayer>
+     live in the browser TOP LAYER, which paints above every z-index; inside
+     the top layer the last one opened wins. So the scale below only orders
+     the normal-flow chrome and the few non-top-layer fixed layers. */
+  --z-raised: 1; /* a card's own decorations */
+  --z-sticky: 10; /* sticky toolbars and headers inside a page */
+  --z-dock: 15;
+  --z-banner: 18;
+  --z-topbar: 20;
+  --z-rail: 30;
+  --z-dropdown: 40; /* non-top-layer menus/listboxes inside a page */
+  --z-sheet: 45; /* docked, non-modal sheets */
+  --z-drawer: 55; /* the non-modal Assistant drawer */
+  --z-scrim: 58;
+  --z-rail-float: 60;
+  --z-dialog: 70; /* legacy non-native modal layers (prefer <Overlay>) */
+  --z-toast: 80;
+  --z-tooltip: 90;
+  --z-skip: 100;
   --rail-w: 232px;
   --rail-w-collapsed: 68px;
   --topbar-h: 52px;
   --muted-gold: color-mix(in srgb, var(--color-gold) 72%, var(--color-muted));
+}
+/* Wide windows have room for the rail captions in full ('Clip new videos
+   automatically', 'What Solaris learned about each…') instead of an ellipsis. */
+@media (min-width: 1600px) {
+  :root { --rail-w: 276px }
 }
 
 html {
@@ -145,11 +170,15 @@ h3 {
    - visible keyboard focus on every interactive element (2.4.7), in gold
      because burgundy is too dark to see against the background
    - honor the user's reduced-motion preference (2.3.3) */
+/* No border-radius here: Chromium's outline follows each element's own
+   radius, so pills and circles keep their shape when focused. */
 :focus-visible {
   outline: 2px solid var(--color-gold);
   outline-offset: 2px;
-  border-radius: 4px;
 }
+/* A programmatic focus (initial focus in a sheet, a wait block with
+   tabindex=-1) is not a keyboard focus and gets no ring. */
+[tabindex='-1']:focus:not(:focus-visible) { outline: none }
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -160,11 +189,19 @@ h3 {
   }
 }
 
-/* Thin warm scrollbars instead of the system grey. */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-line) transparent;
+/* Warm scrollbars instead of the system grey. Chromium 121+ ignores the
+   ::-webkit-scrollbar rules on any element that sets scrollbar-width or
+   scrollbar-color, so the standard properties are only a fallback for
+   engines without the webkit pseudo-elements. Elements that set their own
+   scrollbar-color (the rail list) opt out of the styled thumb on purpose. */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line) transparent;
+  }
 }
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner { background: transparent }
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -414,4 +451,151 @@ select.input option { background: var(--color-surface) }
 }
 .no-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+/* ---------- shared control sizing ----------
+   One control height (38px) for the .btn-* family and .input at the default
+   size. In @layer components on purpose: the .btn-* rules above are
+   unlayered, so a font-size there would beat every `text-xs` utility a
+   caller puts on a button. Layered, the utilities still win. */
+@layer components {
+  .btn-accent,
+  .btn-gold,
+  .btn-ghost,
+  .btn-danger,
+  .btn-subtle,
+  .input {
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+  }
+}
+/* Filled buttons get the same 1px border box as ghost/danger, so a row of
+   mixed variants lines up exactly. */
+.btn-accent,
+.btn-gold { border: 1px solid transparent }
+/* Native select chevrons replaced with a theme one. */
+select.input {
+  appearance: none;
+  padding-right: 2.1rem;
+  /* A chevron drawn with two gradients: no data: URI (the browser build's
+     CSP has no img-src data:). */
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--color-gold) 50%),
+    linear-gradient(135deg, var(--color-gold) 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) calc(50% + 1px),
+    calc(100% - 13px) calc(50% + 1px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  text-overflow: ellipsis;
+}
+select.input[multiple] { background-image: none; padding-right: 0.75rem }
+
+/* ---------- native form controls, themed once for the whole app ----------
+   @layer base: any utility (size-4, w-full, accent-*) or unlayered class
+   (.sys-switch…) on a specific control still wins. */
+@layer base {
+  input[type='checkbox'],
+  input[type='radio'] {
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    display: inline-grid;
+    place-content: center;
+    vertical-align: -0.2em;
+    margin: 0;
+    border: 1.5px solid rgb(216 178 99 / 0.38);
+    border-radius: 5px;
+    background: var(--color-abyss);
+    cursor: pointer;
+    transition:
+      background-color var(--dur-2, 160ms) var(--ease-out, ease-out),
+      border-color var(--dur-2, 160ms),
+      box-shadow var(--dur-2, 160ms);
+  }
+  input[type='radio'] { border-radius: 999px }
+  input[type='checkbox']:hover:not(:disabled),
+  input[type='radio']:hover:not(:disabled) { border-color: var(--color-gold) }
+  input[type='checkbox']:checked,
+  input[type='checkbox']:indeterminate {
+    background: var(--grad-ember);
+    border-color: var(--color-gold);
+    box-shadow: 0 0 10px -3px rgb(169 47 85 / 0.9);
+  }
+  input[type='checkbox']:checked::after {
+    content: '';
+    width: 9px;
+    height: 5px;
+    margin-top: -2px;
+    border: 2px solid var(--color-gold-strong);
+    border-top: 0;
+    border-right: 0;
+    transform: rotate(-45deg);
+  }
+  input[type='checkbox']:indeterminate::after {
+    content: '';
+    width: 8px;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--color-gold-strong);
+  }
+  input[type='radio']:checked { border-color: var(--color-gold) }
+  input[type='radio']:checked::after {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--color-gold-strong);
+    box-shadow: 0 0 6px rgb(236 200 124 / 0.6);
+  }
+  input[type='checkbox']:disabled,
+  input[type='radio']:disabled { opacity: 0.4; cursor: not-allowed }
+
+  input[type='range'] {
+    appearance: none;
+    height: 20px;
+    background: transparent;
+    cursor: pointer;
+  }
+  input[type='range']:disabled { opacity: 0.4; cursor: not-allowed }
+  input[type='range']::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgb(143 36 69 / 0.75), rgb(74 42 52 / 0.9));
+  }
+  input[type='range']::-webkit-slider-thumb {
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    margin-top: -5px;
+    border-radius: 999px;
+    background: var(--color-gold-strong);
+    border: 2px solid var(--color-base);
+    box-shadow: 0 0 0 1px rgb(216 178 99 / 0.6), 0 2px 6px rgb(0 0 0 / 0.5);
+    transition: transform var(--dur-2, 160ms) var(--ease-spring, ease-out);
+  }
+  input[type='range']:hover::-webkit-slider-thumb,
+  input[type='range']:focus-visible::-webkit-slider-thumb { transform: scale(1.15) }
+  input[type='range']:focus-visible { outline-offset: 4px }
+
+  /* A swatch, never a full-width white bar. */
+  input[type='color'] {
+    appearance: none;
+    width: 44px;
+    max-width: 72px;
+    height: 32px;
+    padding: 3px;
+    border: 1px solid var(--color-hairline);
+    border-radius: 8px;
+    background: var(--color-abyss);
+    cursor: pointer;
+  }
+  input[type='color']:hover:not(:disabled) { border-color: rgb(216 178 99 / 0.5) }
+  input[type='color']::-webkit-color-swatch-wrapper { padding: 0 }
+  input[type='color']::-webkit-color-swatch {
+    border: 0;
+    border-radius: 5px;
+    box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.35);
+  }
 }

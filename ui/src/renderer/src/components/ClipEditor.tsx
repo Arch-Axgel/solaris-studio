@@ -1,12 +1,22 @@
 import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import { getExportFolder, pickExportFolder, setExportFolder } from '../lib/exportFolder'
-import { Folder, Scissors } from './icons'
+import { Download, Folder, Scissors } from './icons'
 import type { Clip, PluginNote } from '../lib/types'
 import { sportMoment } from '../lib/sports'
 import { suggestionLine } from '../lib/editSuggestions'
 
 const CHANNELS = ['text', 'audio', 'visual', 'reaction', 'engagement'] as const
+
+/** 5:15.0 beside the raw seconds, so a start of 315 reads as a time. */
+function tc(s: number): string {
+  if (!Number.isFinite(s)) return ''
+  const v = Math.max(0, s)
+  const h = Math.floor(v / 3600)
+  const m = Math.floor((v % 3600) / 60)
+  const sec = (v % 60).toFixed(1).padStart(4, '0')
+  return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`
+}
 
 /** A clip's plugin notes, one line per plugin (and version), in the order they came. */
 function pluginNotes(notes: PluginNote[] | undefined): { key: string; who: string; texts: string[] }[] {
@@ -40,6 +50,7 @@ export default function ClipEditor({
   const [start, setStart] = useState(clip.start_s)
   const [end, setEnd] = useState(clip.end_s)
   const [folder, setFolder] = useState('')
+  const fid = `clip-${clip.id}`
 
   // Default the export destination to the remembered folder / OS Downloads.
   useEffect(() => {
@@ -204,39 +215,69 @@ export default function ClipEditor({
 
       <div className="lib-inspector-fields space-y-3">
         <div>
-          <label className="label">Title</label>
-          <input className="input mt-1" value={title} onChange={(e) => setTitle(e.target.value)} />
+          <label className="label" htmlFor={`${fid}-title`}>
+            Title
+          </label>
+          {/* Grows with the text: a long title was cut off in a one-line input. */}
+          <textarea
+            id={`${fid}-title`}
+            rows={1}
+            className="input mt-1 lib-autogrow"
+            value={title}
+            onChange={(e) => setTitle(e.target.value.replace(/[\r\n]+/g, ' '))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.preventDefault()
+            }}
+          />
         </div>
         <div>
-          <label className="label">Description</label>
+          <label className="label" htmlFor={`${fid}-desc`}>
+            Description
+          </label>
           <textarea
-            className="input mt-1 h-20 resize-none"
+            id={`${fid}-desc`}
+            className="input mt-1 lib-autogrow lib-autogrow-tall"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
         </div>
         <div>
-          <label className="label">Hashtags (space-separated)</label>
-          <input className="input mt-1" value={hashtags} onChange={(e) => setHashtags(e.target.value)} />
+          <label className="label" htmlFor={`${fid}-tags`}>
+            Hashtags (space-separated)
+          </label>
+          <input
+            id={`${fid}-tags`}
+            className="input mt-1"
+            value={hashtags}
+            onChange={(e) => setHashtags(e.target.value)}
+          />
         </div>
-        <div className="flex gap-3">
-          <div className="flex-1">
-            <label className="label">Start (s)</label>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="min-w-0">
+            <label className="label lib-time-label" htmlFor={`${fid}-start`}>
+              Start (s) <span className="lib-time-tc t-mono">{tc(start)}</span>
+            </label>
             <input
+              id={`${fid}-start`}
               type="number"
-              className="input mt-1"
+              className="input mt-1 tabular"
               value={start}
               step={0.5}
+              title={`${start} s`}
               onChange={(e) => setStart(Number(e.target.value))}
             />
           </div>
-          <div className="flex-1">
-            <label className="label">End (s)</label>
+          <div className="min-w-0">
+            <label className="label lib-time-label" htmlFor={`${fid}-end`}>
+              End (s) <span className="lib-time-tc t-mono">{tc(end)}</span>
+            </label>
             <input
+              id={`${fid}-end`}
               type="number"
-              className="input mt-1"
+              className="input mt-1 tabular"
               value={end}
               step={0.5}
+              title={`${end} s`}
               onChange={(e) => setEnd(Number(e.target.value))}
             />
           </div>
@@ -250,41 +291,54 @@ export default function ClipEditor({
         <button className="btn-ghost" onClick={rerender} disabled={busy !== null}>
           {busy === 'render' ? 'Queueing…' : 'Re-render'}
         </button>
-        <input
-          className="input lib-folder-input"
-          value={folder}
-          onChange={(e) => {
-            setFolder(e.target.value)
-            setExportFolder(e.target.value)
-          }}
-          placeholder="export folder"
-          title={folder}
-        />
-        <button
-          className="btn-ghost"
-          onClick={async () => {
-            const chosen = await pickExportFolder()
-            if (chosen) setFolder(chosen)
-          }}
-          title="Choose where exported clips are saved"
-          aria-label="Choose export folder"
-        >
-          <Folder />
-        </button>
-        <button className="btn-ghost" onClick={exportOne} disabled={busy !== null}>
-          {busy === 'export' ? 'Exporting…' : 'Export'}
-        </button>
-        {/* Beside Export rather than only on the card in the grid: Export
-            writes this one clip to a folder, and Publish is the same scope
-            for the other destination. Only shown once a provider is set up,
-            so the row does not carry a button that can only explain itself.
-            Posting is not undoable, so it opens the confirm dialog rather
-            than acting on the click, exactly like Publish all. */}
-        {onPublish && (
-          <button className="btn-ghost" onClick={onPublish} disabled={busy !== null}>
-            Publish ↗
+      </div>
+
+      {/* Export (to a folder) and Publish (to your accounts): the same one
+          clip, to the two destinations, grouped with the folder they use. */}
+      <div className="lib-export-box">
+        <label className="label" htmlFor={`${fid}-folder`}>
+          Export folder
+        </label>
+        <div className="lib-export-folder">
+          <input
+            id={`${fid}-folder`}
+            className="input lib-folder-input"
+            value={folder}
+            onChange={(e) => {
+              setFolder(e.target.value)
+              setExportFolder(e.target.value)
+            }}
+            placeholder="export folder"
+            title={folder}
+          />
+          <button
+            className="btn-ghost lib-folder-pick"
+            onClick={async () => {
+              const chosen = await pickExportFolder()
+              if (chosen) setFolder(chosen)
+            }}
+            title="Choose where exported clips are saved"
+            aria-label="Choose export folder"
+          >
+            <Folder />
           </button>
-        )}
+        </div>
+        <div className="lib-export-actions">
+          <button className="btn-ghost" onClick={exportOne} disabled={busy !== null}>
+            <Download size={15} /> {busy === 'export' ? 'Exporting…' : 'Export'}
+          </button>
+          {/* Beside Export rather than only on the card in the grid: Export
+              writes this one clip to a folder, and Publish is the same scope
+              for the other destination. Only shown once a provider is set up,
+              so the row does not carry a button that can only explain itself.
+              Posting is not undoable, so it opens the confirm dialog rather
+              than acting on the click, exactly like Publish all. */}
+          {onPublish && (
+            <button className="btn-ghost" onClick={onPublish} disabled={busy !== null}>
+              Publish ↗
+            </button>
+          )}
+        </div>
       </div>
       {notice && <p className="lib-inspector-notice" role="status">{notice}</p>}
     </div>

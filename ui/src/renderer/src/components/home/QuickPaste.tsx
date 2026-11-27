@@ -7,7 +7,7 @@ import { t } from '../../lib/i18n'
 import { flyTo } from '../../lib/motion'
 import { navigate, openCreate } from '../../lib/nav'
 import { getQueueSnapshot, refreshQueue } from '../../lib/stores/queueStore'
-import PresetChips, { applyPreset, setPreset, usePreset } from './PresetChips'
+import PresetChips, { applyPreset, applyPresetToGenerateBar, setPreset, usePreset } from './PresetChips'
 import { PLATFORM_META, detectPlatform, normaliseLink, tf, type Platform } from './homeUtil'
 
 interface Staged {
@@ -212,6 +212,9 @@ export default function QuickPaste({ compact = false }: { compact?: boolean }): 
 
   const options = (e: React.MouseEvent<HTMLButtonElement>): void => {
     const link = normaliseLink(value)
+    // The sheet starts from the Generate bar's switches: make them say what
+    // the chips here say, so "Options" opens on the same preset.
+    applyPresetToGenerateBar(preset)
     openCreate({ link: link ?? undefined, originRect: e.currentTarget.getBoundingClientRect() })
   }
 
@@ -331,7 +334,10 @@ export default function QuickPaste({ compact = false }: { compact?: boolean }): 
             <span className="home-quick-suggest anim-rise">
               <Icon name="bulb" size={14} />
               {t('Looks vertical: Vertical Live suggested')}
-              <button type="button" className="btn-subtle ui-btn ui-btn-sm" onClick={() => setPreset('vertical_live')}>
+              <button type="button" className="btn-subtle ui-btn ui-btn-sm" onClick={() => {
+                  setPreset('vertical_live')
+                  applyPresetToGenerateBar('vertical_live')
+                }}>
                 {t('Use it')}
               </button>
             </span>
@@ -339,7 +345,9 @@ export default function QuickPaste({ compact = false }: { compact?: boolean }): 
         </div>
       )}
 
-      <PresetChips className="home-quick-presets" />
+      {/* One preset everywhere: a pick here is also the Create page's and
+          the Create sheet's starting point. */}
+      <PresetChips className="home-quick-presets" applyToGenerateBar />
     </div>
   )
 }

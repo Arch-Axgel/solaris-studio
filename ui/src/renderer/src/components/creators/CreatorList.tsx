@@ -7,14 +7,17 @@ import Leaderboard from './Leaderboard'
 
 export const PLATFORM_ICON: Record<string, IconName> = { youtube: 'youtube', twitch: 'twitch', kick: 'kick' }
 
+const PLATFORM_LABEL: Record<string, string> = { youtube: 'YouTube', twitch: 'Twitch', kick: 'Kick' }
+
 export function PlatformBadge({ platform }: { platform: string }): JSX.Element {
   return (
     <span className="ops-platform" data-platform={platform}>
       <Icon name={PLATFORM_ICON[platform] ?? 'link'} size={11} />
-      {platform}
+      {PLATFORM_LABEL[platform] ?? platform}
     </span>
   )
 }
+
 
 type Sort = 'clips' | 'score' | 'name'
 type View = 'list' | 'board'
@@ -85,18 +88,27 @@ export default function CreatorList({
     <div className="ops-clist">
       <div className="ops-clist-tools">
         <SearchInput value={query} onChange={setQuery} placeholder={t('Search creators')} ariaLabel={t('Search creators')} hotkey />
-        <div className="flex items-center gap-2 flex-wrap">
-          <Segmented
-            size="sm"
-            ariaLabel={t('Sort by')}
-            value={sort}
-            onChange={(id) => setSort(id as Sort)}
-            items={[
-              { id: 'clips', label: t('Clips') },
-              { id: 'score', label: t('Avg score') },
-              { id: 'name', label: t('Name') }
-            ]}
-          />
+        <div className="ops-clist-controls">
+          {/* The board ranks by clips on its own, so sorting only means
+              something in the list. */}
+          {view === 'list' && (
+            <span className="ops-clist-sort">
+              <span className="t-micro text-muted" aria-hidden>
+                {t('Sort')}
+              </span>
+              <Segmented
+                size="sm"
+                ariaLabel={t('Sort by')}
+                value={sort}
+                onChange={(id) => setSort(id as Sort)}
+                items={[
+                  { id: 'clips', label: t('Clips') },
+                  { id: 'score', label: t('Avg score') },
+                  { id: 'name', label: t('Name') }
+                ]}
+              />
+            </span>
+          )}
           <Segmented
             size="sm"
             ariaLabel={t('View')}
@@ -115,7 +127,7 @@ export default function CreatorList({
       )}
 
       {view === 'board' ? (
-        <Leaderboard creators={shown} selected={selected} onSelect={(id) => onSelect(id)} />
+        <Leaderboard creators={shown} selected={selected} onSelect={onSelect} />
       ) : (
         <div className="ops-clist-rows stagger" role="list">
           {shown.map((c, i) => (
@@ -137,31 +149,35 @@ export default function CreatorList({
               >
                 <Avatar seed={c.creator_id} name={c.display_name} size={40} />
                 <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-1.5 flex-wrap">
-                    <span className="font-semibold text-ink truncate">{c.display_name}</span>
+                  <span className="ops-crow-name">
+                    <span className="font-semibold text-ink truncate min-w-0" title={c.display_name}>
+                      {c.display_name}
+                    </span>
                     {c.watched && (
                       <Badge tone="success" size="xs" icon="radar" title={t('A watched channel learns into this profile')}>
                         {t('Watched')}
                       </Badge>
                     )}
+                    <span className="ops-crow-platforms">
+                      {c.accounts.map((a) => (
+                        <PlatformBadge key={a.account_id} platform={a.platform} />
+                      ))}
+                    </span>
                   </span>
-                  <span className="flex items-center gap-1 flex-wrap mt-1">
-                    {c.accounts.map((a) => (
-                      <PlatformBadge key={a.account_id} platform={a.platform} />
-                    ))}
+                  <span className="ops-crow-stats">
+                    <span className="tabular whitespace-nowrap">
+                      {c.videos} {t(c.videos === 1 ? 'video' : 'videos')} · {c.clips} {t(c.clips === 1 ? 'clip' : 'clips')}
+                      {c.avg_score != null && ` · ${t('avg score')} ${c.avg_score}`}
+                    </span>
+                    {c.avg_score != null && (
+                      <Meter
+                        value={c.avg_score / 100}
+                        label={`${t('Average score')} ${c.avg_score}`}
+                        tone={c.avg_score >= 80 ? 'success' : c.avg_score >= 65 ? 'gold' : 'muted'}
+                        className="ops-crow-meter"
+                      />
+                    )}
                   </span>
-                  <span className="text-xs text-muted mt-1.5 block tabular">
-                    {c.videos} {t(c.videos === 1 ? 'video' : 'videos')} · {c.clips} {t(c.clips === 1 ? 'clip' : 'clips')}
-                    {c.avg_score != null && ` · ${t('avg score')} ${c.avg_score}`}
-                  </span>
-                  {c.avg_score != null && (
-                    <Meter
-                      value={c.avg_score / 100}
-                      label={`${t('Average score')} ${c.avg_score}`}
-                      tone={c.avg_score >= 80 ? 'success' : c.avg_score >= 65 ? 'gold' : 'muted'}
-                      className="mt-1.5"
-                    />
-                  )}
                 </span>
               </button>
               <IconButton

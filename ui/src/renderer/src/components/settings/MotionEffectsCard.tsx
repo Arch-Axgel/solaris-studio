@@ -91,12 +91,19 @@ export default function MotionEffectsCard(): JSX.Element {
         />
       </div>
 
-      <Toggle
-        checked={prefs.railHover}
-        onChange={(v) => set({ railHover: v })}
-        label={t('Expand rail on hover')}
-        description={t('When the side rail is collapsed, resting the pointer on it opens it.')}
-      />
+      <div className="sys-pref-row">
+        <div className="min-w-0">
+          <p className="text-sm text-ink font-medium">{t('Expand rail on hover')}</p>
+          <p className="text-xs text-muted">{t('When the side rail is collapsed, resting the pointer on it opens it.')}</p>
+        </div>
+        <Toggle
+          checked={prefs.railHover}
+          onChange={(v) => set({ railHover: v })}
+          label={t('Expand rail on hover')}
+          description={t('When the side rail is collapsed, resting the pointer on it opens it.')}
+          hideLabel
+        />
+      </div>
     </div>
   )
 }

@@ -1,12 +1,13 @@
 import { motionReduced } from '../lib/motion'
-import { useCallback, useEffect, useState } from 'react'
-import { api } from '../lib/api'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { api, errorText } from '../lib/api'
 import type { BrandingProfile, CreatorDetail as Detail, CreatorSuggestion, CreatorSummary } from '../lib/types'
 import { t } from '../lib/i18n'
 import { navigate, openCreate, useBreadcrumbs } from '../lib/nav'
 import { useVisible } from '../lib/stores/useVisible'
 import CreatorList, { PlatformBadge } from '../components/creators/CreatorList'
 import CreatorDetail from '../components/creators/CreatorDetail'
+import { useWidth } from '../components/watch/useMedia'
 import { Avatar, Button, Callout, EmptyState, PageHeader, Skeleton, useConfirm } from '../components/ui'
 
 const DISMISSED_KEY = 'solaris.ui.creators.dismissedMatches'
@@ -44,6 +45,14 @@ export default function Creators({
   const [error, setError] = useState('')
   const [brandingProfiles, setBrandingProfiles] = useState<BrandingProfile[]>([])
   const visible = useVisible(active)
+  // One column when the page can't fit the list (300px+) beside a readable
+  // detail; measured on the page, so the rail is taken into account.
+  const [pageRef, pageWidth] = useWidth<HTMLDivElement>()
+  const oneCol = pageWidth < 960
+  const detailRef = useRef<HTMLDivElement>(null)
+  // Set when the user picks a row, so the detail is brought into view once
+  // it has loaded (in one column it renders below the whole list).
+  const reveal = useRef(false)
 
   const loadBranding = (): void => {
     api.branding().then(setBrandingProfiles).catch(() => setBrandingProfiles([]))
@@ -55,9 +64,11 @@ export default function Creators({
       const data = await api.creators()
       setCreators(data.creators)
       setSuggestions(data.suggestions)
+      setError('')
     } catch (e) {
-      setError(String(e))
-      setCreators((c) => c ?? [])
+      // A failed first read leaves the list unknown (null), not empty: "No
+      // creators yet" would claim the profiles are gone.
+      setError(errorText(e))
     }
   }, [])
 
@@ -97,7 +108,7 @@ export default function Creators({
     api
       .creatorDetail(selected)
       .then((d) => live && setDetail(d))
-      .catch((e) => setError(String(e)))
+      .catch((e) => setError(errorText(e)))
     return () => {
       live = false
     }
@@ -111,10 +122,24 @@ export default function Creators({
       await refresh()
       if (selected !== null) setDetail(await api.creatorDetail(selected).catch(() => null))
     } catch (e) {
-      setError(String(e))
+      setError(errorText(e))
     } finally {
       setBusy(false)
     }
+  }
+
+  useEffect(() => {
+    if (!detail || !reveal.current) return
+    reveal.current = false
+    if (!oneCol) return
+    requestAnimationFrame(() =>
+      detailRef.current?.scrollIntoView({ behavior: motionReduced() ? 'auto' : 'smooth', block: 'start' })
+    )
+  }, [detail, oneCol])
+
+  const pick = (id: number | null): void => {
+    reveal.current = id !== null
+    setSelected(id)
   }
 
   const deleteCreator = async (c: CreatorSummary): Promise<void> => {
@@ -155,8 +180,10 @@ export default function Creators({
   const matches = suggestions.filter((s) => !dismissed.includes(pairKey(s)))
   const summary = creators?.find((c) => c.creator_id === detail?.creator_id)
 
+  const firstLoadFailed = creators === null && error !== ''
+
   return (
-    <div className="ops-page max-w-[1600px] mx-auto p-6 space-y-6 w-full">
+    <div ref={pageRef} className="ops-page max-w-[1600px] mx-auto p-6 space-y-6 w-full">
       <PageHeader
         eyebrow={t('Discover')}
         icon="users"
@@ -167,8 +194,8 @@ export default function Creators({
         )}
       />
 
-      {error && (
-        <Callout tone="error" onDismiss={() => setError('')}>
+      {error && !firstLoadFailed && (
+        <Callout tone="error" title={t('Something went wrong')} onDismiss={() => setError('')}>
           {error}
         </Callout>
       )}
@@ -215,8 +242,21 @@ export default function Creators({
         </div>
       )}
 
-      {creators === null ? (
-        <div className="ops-creators">
+      {firstLoadFailed ? (
+        <div className="card ops-empty anim-rise">
+          <EmptyState
+            illustration="sun"
+            title={t('The engine isn’t answering')}
+            body={t('If it was just starting, give it a moment. Your creators appear here as soon as it replies.')}
+            action={
+              <Button variant="ghost" icon="refresh" onClick={() => void refresh()}>
+                {t('Try again')}
+              </Button>
+            }
+          />
+        </div>
+      ) : creators === null ? (
+        <div className="ops-creators" data-cols={oneCol ? '1' : '2'} aria-busy="true">
           <div className="space-y-2">
             {Array.from({ length: 5 }, (_, i) => (
               <Skeleton key={i} h={86} radius={14} />
@@ -238,16 +278,16 @@ export default function Creators({
           />
         </div>
       ) : (
-        <div className="ops-creators">
+        <div className="ops-creators" data-cols={oneCol ? '1' : '2'}>
           <CreatorList
             creators={creators}
             selected={selected}
             flash={flash}
             busy={busy}
-            onSelect={setSelected}
+            onSelect={pick}
             onDelete={(c) => void deleteCreator(c)}
           />
-          <div className="ops-creators-detail">
+          <div className="ops-creators-detail" ref={detailRef}>
             {detail ? (
               <CreatorDetail
                 detail={detail}
@@ -261,7 +301,8 @@ export default function Creators({
               />
             ) : selected !== null ? (
               <Skeleton h={420} radius={16} />
-            ) : (
+            ) : oneCol ? null : (
+
               <div className="card ops-empty">
                 <EmptyState
                   compact

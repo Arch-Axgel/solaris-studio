@@ -456,6 +456,13 @@ function detailOf(e: Event): Record<string, unknown> | undefined {
   return d && typeof d === 'object' ? (d as Record<string, unknown>) : undefined
 }
 
+/** A window event that opens a shell layer stands down while a full-window
+ *  <Overlay> (layout editor, setup wizard) is open, as the hotkeys do: a
+ *  drawer or palette stacked over it would steal its Esc. */
+function layerDoor(open: () => void): void {
+  if (document.documentElement.dataset.overlay === undefined) open()
+}
+
 /** Install every window-event door and the mouse back/forward buttons.
  *  Called once from App; returns the cleanup. */
 export function installNavEvents(): () => void {
@@ -473,11 +480,11 @@ export function installNavEvents(): () => void {
     ],
     ['open-models', () => navigate({ page: 'models' })],
     [OPEN_MARKETPLACE, () => navigate({ page: 'marketplace' })],
-    [EV.create, (e) => openLayer('create', detailOf(e))],
-    [EV.assistant, (e) => openLayer('assistant', detailOf(e))],
-    [EV.palette, (e) => openLayer('palette', detailOf(e))],
-    [EV.activity, (e) => openLayer('activity', detailOf(e))],
-    [EV.help, (e) => openLayer('help', detailOf(e) ?? { page: state.route.page })]
+    [EV.create, (e) => layerDoor(() => openLayer('create', detailOf(e)))],
+    [EV.assistant, (e) => layerDoor(() => openLayer('assistant', detailOf(e)))],
+    [EV.palette, (e) => layerDoor(() => openLayer('palette', detailOf(e)))],
+    [EV.activity, (e) => layerDoor(() => openLayer('activity', detailOf(e)))],
+    [EV.help, (e) => layerDoor(() => openLayer('help', detailOf(e) ?? { page: state.route.page }))]
   ]
   pairs.forEach(([n, f]) => window.addEventListener(n, f))
 

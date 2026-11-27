@@ -30,9 +30,12 @@ import {
 type StorageInfo = Awaited<ReturnType<typeof api.storage>>
 type VideosInfo = Awaited<ReturnType<typeof api.storageVideos>>
 
+/** Decimal units (1 GB = 10^9 bytes), GB to one decimal like AI models'
+ *  "Free disk". Settings › Files & storage uses the same function
+ *  (Settings.tsx fmtBytes); keep the two in step. */
 const fmtBytes = (b: number): string => {
-  if (b >= 1e12) return `${(b / 1e12).toFixed(2)} TB`
-  if (b >= 1e9) return `${(b / 1e9).toFixed(2)} GB`
+  if (b >= 1e12) return `${(b / 1e12).toFixed(1)} TB`
+  if (b >= 1e9) return `${(b / 1e9).toFixed(1)} GB`
   if (b >= 1e6) return `${(b / 1e6).toFixed(0)} MB`
   if (b >= 1e3) return `${(b / 1e3).toFixed(0)} KB`
   return `${Math.round(b)} B`
@@ -47,9 +50,41 @@ const RECLAIM_LABELS: Record<string, string> = {
   previews: 'Editor previews (rebuilt on demand)'
 }
 
+/** Engine check ids as words. Unknown ids fall through unchanged. */
+const CHECK_LABELS: Record<string, string> = {
+  ffmpeg: 'FFmpeg',
+  ffprobe: 'FFprobe',
+  ai: 'AI model',
+  ollama: 'AI model',
+  whisper: 'Transcription (Whisper)',
+  gpu: 'Graphics card',
+  disk: 'Disk space'
+}
+const checkLabel = (name: string): string => {
+  const known = CHECK_LABELS[name.toLowerCase()]
+  return known ? t(known) : name
+}
+/** Version banners carry a copyright line nobody needs here. */
+const checkDetail = (text: string): string => text.split(/\s+Copyright /)[0].trim()
+
+function StateMark({ ok, i }: { ok: boolean; i: number }): JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round">
+      {ok ? (
+        <path className="draw" pathLength={24} d="M5 12.5l4.5 4.5L19 7" style={{ '--delay': `${200 + i * 60}ms` } as React.CSSProperties} />
+      ) : (
+        <>
+          <circle cx="12" cy="12" r="9" strokeWidth={2} />
+          <path d="M12 7.5v5.5M12 16.5h.01" />
+        </>
+      )}
+    </svg>
+  )
+}
+
 function checkIcon(name: string): IconName {
   const n = name.toLowerCase()
-  if (n.includes('ffmpeg')) return 'film'
+  if (n.includes('ffmpeg') || n.includes('ffprobe')) return 'film'
   if (n.includes('ollama') || n.includes('model') || n.includes('ai')) return 'cpu'
   if (n.includes('whisper') || n.includes('transcri')) return 'note'
   if (n.includes('gpu') || n.includes('cuda')) return 'zap'
@@ -65,19 +100,17 @@ function CheckRow({ c, i }: { c: PreflightCheck; i: number }): JSX.Element {
         <Icon name={checkIcon(c.name)} size={18} />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-sm text-ink font-medium">{c.name}</p>
-        <p className="text-xs text-muted leading-relaxed">{c.ok ? c.detail : c.fix || c.detail}</p>
+        <div className="sys-check-head">
+          <p className="text-sm text-ink font-medium" title={c.name}>
+            {checkLabel(c.name)}
+          </p>
+          <span className="sys-check-state">
+            <StateMark ok={c.ok} i={i} />
+            {c.ok ? t('Ready') : t('Needs attention')}
+          </span>
+        </div>
+        <p className="sys-check-detail">{checkDetail(c.ok ? c.detail : c.fix || c.detail)}</p>
       </div>
-      <span className="sys-check-state">
-        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
-          {c.ok ? (
-            <path className="draw" pathLength={24} d="M5 12.5l4.5 4.5L19 7" style={{ '--delay': `${200 + i * 60}ms` } as React.CSSProperties} />
-          ) : (
-            <path d="M12 7v6M12 17h.01" />
-          )}
-        </svg>
-        {c.ok ? t('Ready') : t('Needs attention')}
-      </span>
     </li>
   )
 }
@@ -114,8 +147,14 @@ function YouTubeCheckRow({ i }: { i: number }): JSX.Element | null {
         <Icon name="youtube" size={18} />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-sm text-ink font-medium">{t('YouTube sign-in')}</p>
-        <p className="text-xs text-muted leading-relaxed">{detail}</p>
+        <div className="sys-check-head">
+          <p className="text-sm text-ink font-medium">{t('YouTube sign-in')}</p>
+          <span className="sys-check-state" aria-live="polite">
+            <StateMark ok={ok} i={i} />
+            {ok ? t('Ready') : state === 'signing-in' ? t('Signing in…') : t('Needs attention')}
+          </span>
+        </div>
+        <p className="sys-check-detail">{detail}</p>
         {supported && state === 'signing-in' && status?.signInStep === 'browser-open' && (
           // The sign-in window is an ordinary browser the app doesn't watch,
           // so the user says when they're done (closing it works too).
@@ -123,7 +162,7 @@ function YouTubeCheckRow({ i }: { i: number }): JSX.Element | null {
             variant="subtle"
             size="sm"
             icon="check"
-            className="mt-2"
+            className="sys-check-fix"
             loading={starting}
             onClick={() => {
               setStarting(true)
@@ -144,7 +183,7 @@ function YouTubeCheckRow({ i }: { i: number }): JSX.Element | null {
               variant="subtle"
               size="sm"
               icon="refresh"
-              className="mt-2"
+              className="sys-check-fix"
               loading={starting}
               onClick={() => {
                 setStarting(true)
@@ -157,14 +196,11 @@ function YouTubeCheckRow({ i }: { i: number }): JSX.Element | null {
               {t('Start in the background')}
             </Button>
           ) : (
-            <Button variant="subtle" size="sm" icon="youtube" className="mt-2" onClick={openYoutubeConnect}>
+            <Button variant="subtle" size="sm" icon="youtube" className="sys-check-fix" onClick={openYoutubeConnect}>
               {t('Sign in')}
             </Button>
           ))}
       </div>
-      <span className="sys-check-state" aria-live="polite">
-        {ok ? t('Ready') : state === 'signing-in' ? t('Signing in…') : t('Needs attention')}
-      </span>
     </li>
   )
 }
@@ -188,10 +224,14 @@ function Health({ active }: { active: boolean }): JSX.Element {
     if (active && !pf) load()
   }, [active, pf, load])
 
+  const yt = useYoutubeAccount()
   const checks = pf?.checks ?? []
-  const okCount = checks.filter((c) => c.ok).length
+  // The YouTube row is drawn with the engine's checks, so the ring counts it too.
+  const ytShown = yt.canConnect && pf !== null && (checks.length > 0 || canConnectYoutube())
+  const total = checks.length + (ytShown ? 1 : 0)
+  const okCount = checks.filter((c) => c.ok).length + (ytShown && yt.state === 'signed-in' ? 1 : 0)
   const blocking = checks.filter((c) => !c.ok && c.blocking).length
-  const frac = checks.length ? okCount / checks.length : 0
+  const frac = total ? okCount / total : 0
   const offline = pf !== null && checks.length === 0
 
   return (
@@ -202,11 +242,11 @@ function Health({ active }: { active: boolean }): JSX.Element {
           size={112}
           stroke={7}
           label={t('Checks passed')}
-          tone={blocking ? 'error' : okCount === checks.length && checks.length ? 'success' : 'gold'}
+          tone={blocking ? 'error' : okCount === total && total ? 'success' : 'gold'}
         >
           <span className="text-center">
             <span className="block t-kpi tabular leading-none">
-              {pf ? `${okCount}/${checks.length}` : '…'}
+              {pf ? `${okCount}/${total}` : '…'}
             </span>
             <span className="t-micro">{t('ready')}</span>
           </span>
@@ -220,7 +260,7 @@ function Health({ active }: { active: boolean }): JSX.Element {
                 ? t('The engine isn’t answering')
                 : blocking
                   ? `${blocking} ${blocking === 1 ? t('thing stops clips being made') : t('things stop clips being made')}`
-                  : pf.ready && okCount === checks.length
+                  : pf.ready && okCount === total
                     ? t('Ready to make clips')
                     : t('Ready, with a few things to look at')}
           </h2>
@@ -277,7 +317,8 @@ function DiskBar({ videos, free }: { videos: VideosInfo | null; free: number | n
     const id = requestAnimationFrame(() => setGrown(true))
     return () => cancelAnimationFrame(id)
   }, [videos])
-  const used = totals.source + totals.transcript + totals.clips
+  // The engine's own total, the number Settings › Files & storage shows.
+  const used = videos ? videos.total_bytes : totals.source + totals.transcript + totals.clips
   const whole = used + (free ?? 0) || 1
   const segs = [
     { key: 'source', label: t('Source videos'), bytes: totals.source },
@@ -466,7 +507,7 @@ function Reclaimable({ info, reload }: { info: StorageInfo | null; reload: () =>
             <span className="t-micro">{freed !== null ? t('freed just now') : t('can be freed')}</span>
           </div>
           {entries.length === 0 ? (
-            <p className="text-sm text-muted mt-3 flex items-center gap-2">
+            <p className="sys-reclaim-clean">
               <Icon name="check" size={14} className="text-success" />
               {t('Nothing to clean up - no leftovers on disk.')}
             </p>
@@ -487,16 +528,18 @@ function Reclaimable({ info, reload }: { info: StorageInfo | null; reload: () =>
               ))}
             </ul>
           )}
-          <Button
-            variant="gold"
-            icon="sparkle"
-            className="mt-4 w-full"
-            loading={cleaning}
-            disabled={cleaning || info.reclaimable_bytes === 0}
-            onClick={(e) => void clean(e)}
-          >
-            {cleaning ? t('Cleaning…') : `${t('Clean up')} ${fmtBytes(info.reclaimable_bytes)}`}
-          </Button>
+          {(info.reclaimable_bytes > 0 || cleaning) && (
+            <Button
+              variant="gold"
+              icon="sparkle"
+              className="mt-4 w-full"
+              loading={cleaning}
+              disabled={cleaning}
+              onClick={(e) => void clean(e)}
+            >
+              {cleaning ? t('Cleaning…') : `${t('Clean up')} ${fmtBytes(info.reclaimable_bytes)}`}
+            </Button>
+          )}
           <p className="text-[11px] text-muted mt-3">
             {t('Source videos')}: {info.sources.files} · {fmtBytes(info.sources.bytes)}.{' '}
             {t('Source videos are never touched by clean up: editing and re-rendering read them. Delete a video above to remove its source.')}

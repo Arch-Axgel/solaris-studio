@@ -15,6 +15,7 @@ import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { setupUpdater } from './updater'
 import {
   registerYoutubeBrowserIpc,
@@ -261,6 +262,20 @@ function startBackend(): void {
   })
 }
 
+/** The app's own renderer: the dev server's origin, or the built index.html
+ *  (any hash/query). */
+function isAppUrl(url: string): boolean {
+  try {
+    const target = new URL(url)
+    const dev = process.env.ELECTRON_RENDERER_URL
+    if (dev) return target.origin === new URL(dev).origin
+    const own = pathToFileURL(join(__dirname, '../renderer/index.html'))
+    return target.protocol === 'file:' && decodeURIComponent(target.pathname).toLowerCase() === decodeURIComponent(own.pathname).toLowerCase()
+  } catch {
+    return false
+  }
+}
+
 function createWindow(): void {
   const win = new BrowserWindow({
     width: 1440,
@@ -313,10 +328,21 @@ function createWindow(): void {
     if (mainWindow === win) mainWindow = null
   })
 
-  // External links open in the system browser, never inside the app.
+  // External links open in the system browser, never inside the app. Only
+  // web links: anything else (file:, javascript:, custom schemes) is dropped.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url)
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
     return { action: 'deny' }
+  })
+
+  // The window only ever shows the app itself. A file or link dropped outside
+  // a drop zone, or a stray <a href> without a target, would otherwise replace
+  // the whole UI with that file/page. Hash routes are in-page and never get
+  // here; web links go to the system browser instead.
+  win.webContents.on('will-navigate', (event, url) => {
+    if (isAppUrl(url)) return
+    event.preventDefault()
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
   })
 
   // Electron ships no right-click menu at all — text boxes need one.
@@ -638,6 +664,17 @@ ipcMain.handle('pick-folder', async () => {
   })
   return result.canceled ? null : result.filePaths[0]
 })
+
+// Draw the window on the dedicated GPU. On a laptop with both an integrated
+// and a discrete card, Windows hands Chromium the integrated one unless the
+// app asks, so the editor's video previews, the timeline and every animation
+// ran on the iGPU while the NVIDIA card sat idle (checked on a Quadro P3200 +
+// UHD 630: the WebGL renderer reads Intel without this switch, NVIDIA with
+// it). Must be set before the app is ready. SOLARIS_STUDIO_GPU=integrated
+// opts out, for anyone who would rather keep the battery.
+if (process.env.SOLARIS_STUDIO_GPU !== 'integrated') {
+  app.commandLine.appendSwitch('force_high_performance_gpu')
+}
 
 // One Solaris Studio at a time. A second launch used to start a second engine
 // that could not bind port 8765 and a window talking to the first one's; with

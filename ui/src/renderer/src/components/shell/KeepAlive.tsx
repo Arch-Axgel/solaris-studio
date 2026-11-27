@@ -1,4 +1,4 @@
-import { Component, useEffect, useRef, type ErrorInfo, type ReactNode } from 'react'
+import { Component, useEffect, useLayoutEffect, useRef, type ErrorInfo, type ReactNode } from 'react'
 import { PAGES, releasePage, useMountedPages, useRoute, type Page } from '../../lib/nav'
 import { PageContext } from '../../lib/stores/useVisible'
 import { t } from '../../lib/i18n'
@@ -55,6 +55,24 @@ function Section({ page, active, children }: { page: Page; active: boolean; chil
   useEffect(() => {
     const el = ref.current as (HTMLElement & { inert: boolean }) | null
     if (el) el.inert = !active
+  }, [active])
+
+  // nav.ts skips the view transition on a cold mount (and under reduced
+  // motion it never runs): fade the page in instead, so every navigation has
+  // the same feel. Opacity only, and the class goes once it has played, so
+  // no transform or stacking context is left on the page.
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!active || !el || document.documentElement.dataset.navDir) return
+    el.classList.add('page-enter')
+    const done = (): void => el.classList.remove('page-enter')
+    el.addEventListener('animationend', done, { once: true })
+    const id = setTimeout(done, 600)
+    return () => {
+      clearTimeout(id)
+      el.removeEventListener('animationend', done)
+      done()
+    }
   }, [active])
 
   // Heavy pages are let go after 5 idle minutes, unless a dialog is open in them.

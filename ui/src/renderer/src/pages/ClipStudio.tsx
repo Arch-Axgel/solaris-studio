@@ -31,7 +31,7 @@ import { getExportFolder } from '../lib/exportFolder'
 import { t } from '../lib/i18n'
 import { useHotkey } from '../lib/hotkeys'
 import { markClipTransition, useReducedMotion, withViewTransition } from '../lib/motion'
-import { closeLayer, navigate, openCreate, topLayer, useBreadcrumbs } from '../lib/nav'
+import { closeLayer, navigate, openCreate, openSettings, topLayer, useBreadcrumbs } from '../lib/nav'
 import { useStudioEvents } from '../lib/stores/eventBus'
 import { invalidateLibrary, loadClipsFor } from '../lib/stores/library'
 import { useVisible } from '../lib/stores/useVisible'
@@ -97,7 +97,9 @@ export default function ClipStudio({
   const visible = useVisible(active)
   const askConfirm = useConfirm()
   const reduced = useReducedMotion()
-  const narrow = useMediaQuery('(max-width: 1279px)')
+  // Below 1440 the docked inspector left the grid ~420px at the commonest
+  // laptop size (1280): two huge cards a row. There it opens as a sheet.
+  const narrow = useMediaQuery('(max-width: 1439px)')
 
   const [videos, setVideos] = useState<Video[]>([])
   const [videosLoaded, setVideosLoaded] = useState(false)
@@ -114,7 +116,11 @@ export default function ClipStudio({
   const [morphId, setMorphId] = useState<number | null>(null)
   const [videoSearch, setVideoSearch] = useState('')
   const [creator, setCreator] = useState<string | null>(null)
-  const [railCollapsed, setRailCollapsed] = useState<boolean>(() => readPref<boolean>('railCollapsed', false))
+  // Narrow windows start with the video rail folded away, so the clips get the
+  // room; a choice the person made is kept either way.
+  const [railCollapsed, setRailCollapsed] = useState<boolean>(() =>
+    readPref<boolean>('railCollapsed', typeof window !== 'undefined' && window.innerWidth < 1100)
+  )
   // A connected native YouTube account or a configured social-posting
   // provider makes bulk publishing available.
   const [publishReady, setPublishReady] = useState(false)
@@ -435,7 +441,17 @@ export default function ClipStudio({
     const id = requestAnimationFrame(() => {
       const el = rootRef.current?.querySelector<HTMLElement>(`.lib-grid-item[data-clip-id="${flashId}"]`)
       if (!el) return
-      el.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' })
+      // Scroll only the grid's own scroller: scrollIntoView would also move
+      // overflow:hidden parents (.lib-center, the page), which then sit
+      // shifted with the sticky toolbar's first row cut off at the top.
+      const sc = el.closest<HTMLElement>('.lib-grid-scroll')
+      if (sc) {
+        const r = el.getBoundingClientRect()
+        const s = sc.getBoundingClientRect()
+        sc.scrollTo({ top: sc.scrollTop + (r.top - s.top) - Math.max(0, (s.height - r.height) / 2), behavior: reduced ? 'auto' : 'smooth' })
+      } else {
+        el.scrollIntoView({ block: 'nearest', behavior: reduced ? 'auto' : 'smooth' })
+      }
       el.classList.remove('lib-flash')
       void el.offsetWidth
       el.classList.add('lib-flash')
@@ -795,6 +811,19 @@ export default function ClipStudio({
         ? `${t('Clip Editor')} · ${creatorLabelOf(activeInfo)}`
         : t('Clip Editor')
 
+  const filterLabel = videoSearch.trim()
+  const filterOn = Boolean(filterLabel || creator)
+  const clearFilters = (): void => {
+    setVideoSearch('')
+    setCreator(null)
+  }
+  const creatorName = creator
+    ? (() => {
+        const v = videos.find((x) => creatorKeyOf(x) === creator)
+        return v ? creatorLabelOf(v) : null
+      })()
+    : null
+
   const inspector = current ? (
     <div className="lib-inspector-inner anim-fade" key={current.id}>
       <ClipEditor
@@ -853,7 +882,19 @@ export default function ClipStudio({
     }
     if (clips.length === 0) {
       if (activeVideo === ALL_CLIPS) {
-        return (
+        // A filter left on in the rail is the likelier reason, so say so.
+        return filterOn ? (
+          <EmptyState
+            compact
+            illustration="search"
+            title={filterLabel ? `${t('No video matches')} “${filterLabel}”` : t('No video matches.')}
+            action={
+              <Button size="sm" variant="ghost" icon="x" onClick={clearFilters}>
+                {t('Clear filters')}
+              </Button>
+            }
+          />
+        ) : (
           <EmptyState
             compact
             illustration="search"
@@ -862,6 +903,7 @@ export default function ClipStudio({
           />
         )
       }
+      const finished = activeInfo?.status === 'done'
       return (
         <div className="lib-noclips anim-rise">
           <span className="lib-noclips-icon" aria-hidden>
@@ -869,6 +911,23 @@ export default function ClipStudio({
           </span>
           <div className="min-w-0 flex-1">
             <NoClipsExplanation outcome={activeInfo?.outcome} />
+            {finished && (
+              <div className="lib-noclips-actions">
+                {activeInfo?.outcome?.candidates ? (
+                  <Button size="sm" variant="accent" icon="gear" onClick={() => openSettings('ai')}>
+                    {t('Change the minimum score')}
+                  </Button>
+                ) : null}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon="plus"
+                  onClick={(e) => openCreate({ originRect: e.currentTarget.getBoundingClientRect() })}
+                >
+                  {t('New clips')}
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       )
@@ -967,98 +1026,130 @@ export default function ClipStudio({
 
               <ProcessingBar variant="slim" />
 
-              {videos.length > 0 && activeVideo && (
+              {activeVideo === ALL_CLIPS && filterOn && (
+                <div>
+                  <span className="lib-filter-on" role="status">
+                    <Icon name="filter" size={13} />
+                    <span>
+                      {t('Only videos matching')}{' '}
+                      <b className="text-ink">
+                        {[filterLabel && `“${filterLabel}”`, creatorName].filter(Boolean).join(' · ')}
+                      </b>
+                    </span>
+                    <Tooltip content={t('Clear filters')}>
+                      <button type="button" aria-label={t('Clear filters')} onClick={clearFilters}>
+                        <Icon name="x" size={13} />
+                      </button>
+                    </Tooltip>
+                  </span>
+                </div>
+              )}
+
+              {/* Nothing to act on with no clips: the explanation below says
+                  why, and a row of disabled controls only got in its way. */}
+              {videos.length > 0 && activeVideo && clips.length > 0 && (
                 <div className="lib-toolbar" role="toolbar" aria-label={t('Clip tools')}>
-                  <Segmented
-                    size="sm"
-                    ariaLabel="Filter clips by format"
-                    items={typeItems}
-                    value={clipType}
-                    onChange={(v) => setClipType(v as ClipType)}
-                  />
-                  <label className="sr-only" htmlFor="lib-clip-sort">
-                    {t('Sort clips')}
-                  </label>
-                  <select
-                    id="lib-clip-sort"
-                    className="input lib-select"
-                    value={sort}
-                    onChange={(e) => setSort(e.target.value as ClipSort)}
-                  >
-                    <option value="score">{t('Best score')}</option>
-                    <option value="newest">{t('Newest')}</option>
-                    <option value="time">{t('Time in video')}</option>
-                  </select>
-                  <Segmented
-                    size="sm"
-                    ariaLabel={t('Card size')}
-                    items={[
-                      { id: 's', label: 'S' },
-                      { id: 'm', label: 'M' },
-                      { id: 'l', label: 'L' }
-                    ]}
-                    value={density}
-                    onChange={(v) => setDensity(v as Density)}
-                  />
-                  <Tooltip content={t('Pick several clips (Shift-click for a range, Ctrl+A for all)')}>
-                    <button
-                      type="button"
-                      className="lib-tool-btn"
-                      aria-pressed={selecting}
-                      onClick={() => (selecting ? clearSelection() : setSelectMode(true))}
+                  <div className="lib-toolbar-group">
+                    <Segmented
+                      size="sm"
+                      ariaLabel="Filter clips by format"
+                      items={typeItems}
+                      value={clipType}
+                      onChange={(v) => setClipType(v as ClipType)}
+                    />
+                    <label className="sr-only" htmlFor="lib-clip-sort">
+                      {t('Sort clips')}
+                    </label>
+                    <select
+                      id="lib-clip-sort"
+                      className="input lib-select"
+                      value={sort}
+                      onChange={(e) => setSort(e.target.value as ClipSort)}
                     >
-                      <Icon name="check" size={14} /> {t('Select')}
-                    </button>
-                  </Tooltip>
-
-                  <span className="lib-toolbar-gap" />
-
-                  <button
-                    className="btn-accent lib-tool-main"
-                    onClick={() => void exportAll()}
-                    disabled={exportingAll || toExport.length === 0}
-                    title={
-                      toExport.length === 0
-                        ? 'Every clip here is already starred as exported'
-                        : `Export the ${toExport.length} clip${toExport.length === 1 ? '' : 's'} here that are not starred yet`
-                    }
-                  >
-                    <Icon name="download" size={14} />
-                    {exportingAll ? 'Exporting…' : `Export all (${toExport.length})`}
-                  </button>
-                  {/* Deliberately not styled as a twin of Export beside it.
-                      Export writes files you can delete; this posts publicly and
-                      cannot be undone, so it is quieter to look at and opens a
-                      confirm rather than acting on the click. */}
-                  {publishReady && (
-                    <>
+                      <option value="score">{t('Best score')}</option>
+                      <option value="newest">{t('Newest')}</option>
+                      <option value="time">{t('Time in video')}</option>
+                    </select>
+                    <Segmented
+                      size="sm"
+                      ariaLabel={t('Card size')}
+                      items={[
+                        { id: 's', label: 'S' },
+                        { id: 'm', label: 'M' },
+                        { id: 'l', label: 'L' }
+                      ]}
+                      value={density}
+                      onChange={(v) => setDensity(v as Density)}
+                    />
+                    <Tooltip content={t('Pick several clips (Shift-click for a range, Ctrl+A for all)')}>
                       <button
-                        className="btn-ghost lib-tool-main"
+                        type="button"
+                        className="lib-tool-btn"
+                        aria-pressed={selecting}
+                        onClick={() => (selecting ? clearSelection() : setSelectMode(true))}
+                      >
+                        <Icon name="check" size={14} /> {t('Select')}
+                      </button>
+                    </Tooltip>
+                  </div>
+
+                  <div className="lib-toolbar-actions">
+                    <Button
+                      size="sm"
+                      variant="accent"
+                      icon="download"
+                      onClick={() => void exportAll()}
+                      loading={exportingAll}
+                      disabled={toExport.length === 0}
+                      title={
+                        toExport.length === 0
+                          ? 'Every clip here is already starred as exported'
+                          : `Export the ${toExport.length} clip${toExport.length === 1 ? '' : 's'} here that are not starred yet`
+                      }
+                    >
+                      {exportingAll ? 'Exporting…' : `Export all (${toExport.length})`}
+                    </Button>
+                    {/* Deliberately not styled as a twin of Export beside it.
+                        Export writes files you can delete; this posts publicly and
+                        cannot be undone, so it is quieter to look at and opens a
+                        confirm rather than acting on the click. */}
+                    {publishReady && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
                         onClick={() => setPublishList(shownClips)}
                         disabled={shownClips.length === 0}
                         title={`Publish the ${shownClips.length} clip${shownClips.length === 1 ? '' : 's'} shown here to your social accounts`}
                       >
                         {`Publish all (${shownClips.length}) ↗`}
-                      </button>
-                      <button
-                        className="btn-ghost lib-tool-main"
-                        onClick={() => setShowSchedule(true)}
-                        title="When each scheduled post is due, and what actually posted"
-                      >
-                        Schedule
-                      </button>
-                    </>
-                  )}
-                  <Tooltip content={t('Open calendar')}>
-                    <button
-                      type="button"
-                      className="btn-icon"
-                      aria-label={t('Open calendar')}
-                      onClick={() => navigate({ page: 'calendar' })}
-                    >
-                      <Icon name="calendar" size={16} />
-                    </button>
-                  </Tooltip>
+                      </Button>
+                    )}
+                    <span className="lib-toolbar-sched">
+                      {publishReady && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          icon="clock"
+                          className="lib-toolbar-sched-btn"
+                          aria-label={t('Schedule')}
+                          onClick={() => setShowSchedule(true)}
+                          title="When each scheduled post is due, and what actually posted"
+                        >
+                          Schedule
+                        </Button>
+                      )}
+                      <Tooltip content={t('Open calendar')}>
+                        <button
+                          type="button"
+                          className="btn-icon"
+                          aria-label={t('Open calendar')}
+                          onClick={() => navigate({ page: 'calendar' })}
+                        >
+                          <Icon name="calendar" size={16} />
+                        </button>
+                      </Tooltip>
+                    </span>
+                  </div>
                 </div>
               )}
 

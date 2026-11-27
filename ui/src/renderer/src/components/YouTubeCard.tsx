@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api'
 import { t } from '../lib/i18n'
 import { rememberYoutubeEnabled, type YouTubeStatus } from '../lib/youtube'
+import { Button } from './ui'
 
 /** Settings for publishing to YouTube.
  *
@@ -199,7 +200,7 @@ export default function YouTubeCard(): JSX.Element {
                 {(status.accounts ?? []).map((account) => (
                   <li
                     key={account.id}
-                    className="flex items-center justify-between gap-2 text-sm bg-raised/40 border border-line/60 rounded-lg px-3 py-2"
+                    className="flex items-center justify-between gap-2 text-sm bg-raised/40 border border-line/60 rounded-lg pl-3 pr-1.5 py-1.5"
                   >
                     <span className="truncate">
                       {account.handle || account.title}
@@ -209,21 +210,13 @@ export default function YouTubeCard(): JSX.Element {
                     </span>
                     <span className="flex gap-2 shrink-0">
                       {!account.default && (
-                        <button
-                          className="text-[11px] text-gold hover:underline"
-                          disabled={busy}
-                          onClick={() => makeDefault(account.id)}
-                        >
+                        <Button variant="subtle" size="sm" disabled={busy} onClick={() => makeDefault(account.id)}>
                           {t('Make default')}
-                        </button>
+                        </Button>
                       )}
-                      <button
-                        className="text-[11px] text-muted hover:text-ink"
-                        disabled={busy}
-                        onClick={() => disconnect(account.id)}
-                      >
+                      <Button variant="subtle" size="sm" icon="x" disabled={busy} onClick={() => disconnect(account.id)}>
                         {t('Disconnect')}
-                      </button>
+                      </Button>
                     </span>
                   </li>
                 ))}

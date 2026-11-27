@@ -32,11 +32,12 @@ export default function TransportDock(): JSX.Element | null {
       onBlur={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOpen(false)
       }}
-      role={open ? 'region' : undefined}
-      aria-label={open ? t('Queue progress') : undefined}
-      aria-hidden={open ? undefined : true}
+      // Always exposed: keyboard users reach "Open queue" with Tab (focus
+      // opens the strip), and screen readers don't see it come and go.
+      role="region"
+      aria-label={t('Queue progress')}
     >
-      <div className="dock-track">
+      <div className="dock-track" aria-hidden>
         <div className="dock-fill" style={{ width: `${(frac * 100).toFixed(2)}%` }}>
           <span className="dock-head" />
         </div>
@@ -64,7 +65,6 @@ export default function TransportDock(): JSX.Element | null {
         <button
           type="button"
           className="dock-open"
-          tabIndex={open ? 0 : -1}
           onClick={() => navigate({ page: 'queue' })}
         >
           {t('Open queue')}

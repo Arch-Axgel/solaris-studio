@@ -108,13 +108,37 @@ function LogViewer({ jobId }: { jobId: number }): JSX.Element {
   )
 }
 
-function EventCard({ item, unread, now, onDone, style }: { item: ActivityItem; unread: boolean; now: number; onDone: () => void; style?: React.CSSProperties }): JSX.Element {
+function EventCard({
+  item,
+  unread,
+  now,
+  onDone,
+  clipCount,
+  style
+}: {
+  item: ActivityItem
+  unread: boolean
+  now: number
+  onDone: () => void
+  /** clips the job's video has now, when known */
+  clipCount?: number
+  style?: React.CSSProperties
+}): JSX.Element {
   const [showLog, setShowLog] = useState(false)
   const [retrying, setRetrying] = useState(false)
   const [retried, setRetried] = useState(false)
   const jobId = typeof item.jobId === 'number' ? item.jobId : typeof item.jobId === 'string' && /^\d+$/.test(item.jobId) ? Number(item.jobId) : null
   const failedJob = item.kind === 'job' && item.tone === 'error' && jobId !== null
   const doneJob = item.kind === 'job' && item.tone === 'success' && item.videoId
+  // A run can finish cleanly and still keep nothing (every moment scored under
+  // the minimum). That is not a green "done": say so, and point at the why.
+  const noClips = !!doneJob && clipCount === 0
+  const tone: ActivityItem['tone'] = noClips ? 'warn' : item.tone
+  const body = noClips
+    ? t('Finished — no clips this time')
+    : doneJob && typeof clipCount === 'number' && item.body === t('Finished processing')
+      ? `${clipCount} ${clipCount === 1 ? t('clip ready') : t('clips ready')}`
+      : item.body
 
   const retry = async (): Promise<void> => {
     if (jobId === null) return
@@ -131,9 +155,9 @@ function EventCard({ item, unread, now, onDone, style }: { item: ActivityItem; u
   }
 
   return (
-    <article className="lyr-act-card" data-tone={item.tone} data-unread={unread ? 'true' : 'false'} style={style}>
+    <article className="lyr-act-card" data-tone={tone} data-unread={unread ? 'true' : 'false'} style={style}>
       <span className="lyr-act-badge" aria-hidden>
-        <Icon name={item.kind === 'job' || item.kind === 'publish' ? TONE_ICON[item.tone] : KIND_ICON[item.kind]} size={15} />
+        <Icon name={item.kind === 'job' || item.kind === 'publish' ? TONE_ICON[tone] : KIND_ICON[item.kind]} size={15} />
       </span>
       <div className="lyr-act-main">
         <div className="lyr-act-top">
@@ -142,7 +166,7 @@ function EventCard({ item, unread, now, onDone, style }: { item: ActivityItem; u
             {relTime(item.at, now)}
           </time>
         </div>
-        {item.body && <p className="lyr-act-body">{item.body}</p>}
+        {body && <p className="lyr-act-body">{body}</p>}
         {typeof item.progress === 'number' && (
           <ProgressBar value={item.progress} label={item.title} size="xs" tone="gold" />
         )}
@@ -157,7 +181,15 @@ function EventCard({ item, unread, now, onDone, style }: { item: ActivityItem; u
                   navigate({ page: 'studio', params: { videoId: item.videoId as string } })
                 }}
               >
-                <Icon name="scissors" size={13} /> {t('Open clips')}
+                {noClips ? (
+                  <>
+                    <Icon name="help" size={13} /> {t('See why')}
+                  </>
+                ) : (
+                  <>
+                    <Icon name="scissors" size={13} /> {t('Open clips')}
+                  </>
+                )}
               </button>
             )}
             {failedJob && (
@@ -199,6 +231,23 @@ export default function ActivityDrawer(): JSX.Element | null {
   const pulls = useModelPulls()
   const [filter, setFilter] = useState<Filter>('all')
   const [now, setNow] = useState(() => Date.now())
+  const [clipCounts, setClipCounts] = useState<Map<string, number>>(() => new Map())
+
+  // How many clips each finished job's video has, so a run that kept nothing
+  // isn't shown as a plain success.
+  useEffect(() => {
+    if (!open) return
+    let live = true
+    api
+      .videos()
+      .then((vs) => live && setClipCounts(new Map(vs.map((v) => [v.video_id, v.clip_count ?? 0]))))
+      .catch(() => {
+        /* counts are a refinement; the cards work without them */
+      })
+    return () => {
+      live = false
+    }
+  }, [open])
 
   // Relative times tick while the drawer is open.
   useEffect(() => {
@@ -209,11 +258,14 @@ export default function ActivityDrawer(): JSX.Element | null {
   }, [open])
 
   const unreadIds = useMemo(() => new Set(items.slice(0, unread).map((i) => i.id)), [items, unread])
+  // Chips count what is NEW in each filter (a total reads like unread mail
+  // next to "You're all caught up").
   const counts = useMemo(() => {
-    const c: Record<string, number> = { all: items.length, log: raw.length }
-    for (const i of items) c[i.kind] = (c[i.kind] ?? 0) + 1
+    const fresh = items.slice(0, unread)
+    const c: Record<string, number> = { all: fresh.length }
+    for (const i of fresh) c[i.kind] = (c[i.kind] ?? 0) + 1
     return c
-  }, [items, raw])
+  }, [items, unread])
 
   const shown = useMemo(() => (filter === 'all' || filter === 'log' ? items : items.filter((i) => i.kind === filter)), [items, filter])
 
@@ -324,6 +376,7 @@ export default function ActivityDrawer(): JSX.Element | null {
                     unread={unreadIds.has(it.id)}
                     now={now}
                     onDone={close}
+                    clipCount={it.videoId ? clipCounts.get(it.videoId) : undefined}
                     style={{ '--i': Math.min(i, 12) } as React.CSSProperties}
                   />
                 ))}

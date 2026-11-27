@@ -28,7 +28,7 @@ import UploadPostCard from '../components/UploadPostCard'
 import WoopSocialCard from '../components/WoopSocialCard'
 import YouTubeCard from '../components/YouTubeCard'
 import RemoteRenderCard from '../components/RemoteRenderCard'
-import { Folder, Icon, type IconName } from '../components/icons'
+import { Icon, type IconName } from '../components/icons'
 import { Button, EmptyState, PageHeader, StatusChip, Toggle, useConfirm } from '../components/ui'
 import { openYoutubeConnect, useYoutubeAccount, type YtState } from '../lib/stores/youtubeAccount'
 import { relativeTime } from '../components/home/homeUtil'
@@ -126,31 +126,41 @@ function ExportFolderCard(): JSX.Element {
       </p>
       <div className="flex items-center gap-2">
         <input
-          className="input flex-1"
+          className="input flex-1 min-w-0"
           value={folder}
           onChange={(e) => {
             setFolder(e.target.value)
             setExportFolder(e.target.value)
           }}
-          placeholder="e.g. C:\\Users\\you\\Downloads"
+          placeholder={'e.g. C:\\Users\\you\\Downloads'}
+          aria-label={t('Export location')}
           title={folder}
         />
-        <button
-          className="btn-ghost shrink-0"
+        <Button
+          variant="ghost"
+          icon="folder"
+          className="shrink-0"
           onClick={async () => {
             const chosen = await pickExportFolder()
             if (chosen) setFolder(chosen)
           }}
         >
-          <Folder className="mr-1.5" />
           {t('Browse…')}
-        </button>
+        </Button>
       </div>
     </div>
   )
 }
 
-const GB = (bytes: number): string => `${(bytes / 1e9).toFixed(2)} GB`
+/** The same sizes Storage & health shows, in the same units: decimal, GB to
+ *  one decimal like AI models' "Free disk" (Storage.tsx fmtBytes). */
+const GB = (b: number): string => {
+  if (b >= 1e12) return `${(b / 1e12).toFixed(1)} TB`
+  if (b >= 1e9) return `${(b / 1e9).toFixed(1)} GB`
+  if (b >= 1e6) return `${(b / 1e6).toFixed(0)} MB`
+  if (b >= 1e3) return `${(b / 1e3).toFixed(0)} KB`
+  return `${Math.round(b)} B`
+}
 
 /** Where the disk went, and a way to get some of it back.
  *
@@ -196,14 +206,20 @@ function StorageCard(): JSX.Element {
                 </div>
               ))}
             {info.reclaimable_bytes === 0 && (
-              <p className="text-muted">{t('Nothing to clean up - no leftovers on disk.')}</p>
+              <p className="sys-reclaim-clean !mt-0">
+                <Icon name="check" size={14} className="text-success" />
+                {t('Nothing to clean up - no leftovers on disk.')}
+              </p>
             )}
           </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              className="btn-ghost !py-1 text-xs"
-              disabled={busy || info.reclaimable_bytes === 0}
+          <div className="flex items-center gap-3 empty:hidden">
+            {info.reclaimable_bytes > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              icon="sparkle"
+              loading={busy}
               onClick={async () => {
                 setBusy(true)
                 setDone('')
@@ -219,14 +235,15 @@ function StorageCard(): JSX.Element {
               }}
             >
               {busy ? t('Cleaning…') : `${t('Free up')} ${GB(info.reclaimable_bytes)}`}
-            </button>
+            </Button>
+            )}
             {done && <span className="text-xs text-muted">{done}</span>}
           </div>
 
-          <p className="text-[11px] text-muted/80 border-t border-line/60 pt-2">
+          <p className="text-xs text-muted border-t border-line/60 pt-3">
             {t('Source videos')}: {info.sources.files} · {GB(info.sources.bytes)}.{' '}
             {t(
-              'These are the biggest thing on disk and are NOT touched - editing, re-rendering and translated burns all read them. Delete a video from the Dashboard to remove its source along with its clips.'
+              'These are the biggest thing on disk and clean up never touches them: editing, re-rendering and translated burns all read them. Delete a video below, or from Storage & health, to remove its source along with its clips.'
             )}
           </p>
         </>
@@ -269,7 +286,14 @@ function VideoStorageCard(): JSX.Element {
     }
   }
 
-  if (!info || info.videos.length === 0) return <></>
+  if (!info) return <></>
+  if (info.videos.length === 0)
+    return (
+      <div className="card space-y-1" aria-label="Video storage">
+        <h3 className="font-semibold text-ink">{t('Delete a finished video')}</h3>
+        <p className="text-xs text-muted">{t('No finished videos on disk yet. Videos you process show up here with what each one costs.')}</p>
+      </div>
+    )
 
   return (
     <div className="card space-y-3" aria-label="Video storage">
@@ -295,28 +319,32 @@ function VideoStorageCard(): JSX.Element {
             <span className="tabular-nums shrink-0 font-medium">{GB(v.total_bytes)}</span>
             {confirming === v.video_id ? (
               <>
-                <button
-                  className="btn-accent !py-1 !px-2 shrink-0"
+                <Button
+                  variant="danger"
+                  size="sm"
+                  icon="trash"
+                  className="shrink-0"
+                  loading={busy === v.video_id}
                   disabled={busy !== null}
                   onClick={() => remove(v.video_id, v.total_bytes)}
                 >
                   {busy === v.video_id ? t('Deleting…') : t('Delete everything')}
-                </button>
-                <button
-                  className="btn-ghost !py-1 !px-2 shrink-0"
-                  onClick={() => setConfirming(null)}
-                >
+                </Button>
+                <Button variant="subtle" size="sm" className="shrink-0" onClick={() => setConfirming(null)}>
                   {t('Cancel')}
-                </button>
+                </Button>
               </>
             ) : (
-              <button
-                className="btn-ghost !py-1 !px-2 shrink-0"
+              <Button
+                variant="ghost"
+                size="sm"
+                icon="trash"
+                className="shrink-0"
                 disabled={busy !== null}
                 onClick={() => setConfirming(v.video_id)}
               >
                 {t('Delete')}
-              </button>
+              </Button>
             )}
           </div>
         ))}
@@ -361,8 +389,9 @@ function AppearanceCard(): JSX.Element {
         </select>
       </div>
       <div>
-        <label htmlFor="app-scale" className="label">
-          Text size — {appearance.scale}%
+        <label htmlFor="app-scale" className="label flex items-baseline justify-between gap-3">
+          <span>{t('Text size')}</span>
+          <span className="tabular text-ink">{appearance.scale}%</span>
         </label>
         <input
           id="app-scale"
@@ -372,29 +401,31 @@ function AppearanceCard(): JSX.Element {
           step={12.5}
           value={appearance.scale}
           onChange={(e) => update({ scale: Number(e.target.value) })}
-          className="w-full mt-1 accent-accent-strong"
+          className="w-full mt-2"
         />
       </div>
-      <div className="flex items-end gap-3">
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <label htmlFor="app-color" className="label">
+          <label htmlFor="app-color" className="label block">
             {t('Text colour')}
           </label>
-          <input
-            id="app-color"
-            type="color"
-            value={appearance.textColor}
-            onChange={(e) => update({ textColor: e.target.value })}
-            className="mt-1 h-10 w-16 bg-raised rounded-lg cursor-pointer border border-line"
-          />
+          <div className="sys-swatch-row mt-1">
+            <input
+              id="app-color"
+              type="color"
+              value={appearance.textColor}
+              onChange={(e) => update({ textColor: e.target.value })}
+              className="sys-swatch"
+            />
+            <span className="font-mono text-xs text-muted uppercase">{appearance.textColor}</span>
+          </div>
         </div>
-        <button className="btn-ghost" onClick={() => update(DEFAULT_APPEARANCE)}>
+        <Button variant="ghost" size="sm" icon="undo" onClick={() => update(DEFAULT_APPEARANCE)}>
           {t('Reset to defaults')}
-        </button>
+        </Button>
       </div>
       <p className="text-xs text-muted">
-        Changes apply instantly and are remembered. Keyboard focus outlines and reduced-motion
-        preferences are always honored.
+        {t('Changes apply instantly and are remembered. Keyboard focus outlines and reduced-motion preferences are always honored.')}
       </p>
     </div>
   )
@@ -460,25 +491,29 @@ function UpdateCard(): JSX.Element {
       <h3 className="font-semibold text-ink">{t('Updates')}</h3>
       <p className="text-sm text-muted">{line}</p>
       <div className="flex items-center gap-3 flex-wrap">
-        <button
-          className="btn-ghost !py-1.5"
-          disabled={state?.state === 'checking'}
+        <Button
+          variant="ghost"
+          size="sm"
+          icon="refresh"
+          loading={state?.state === 'checking'}
           onClick={() => {
             setAsked(true)
             void window.studio.update.check()
           }}
         >
-          {state?.state === 'checking' ? 'Checking…' : t('Check for updates')}
-        </button>
+          {state?.state === 'checking' ? t('Checking…') : t('Check for updates')}
+        </Button>
         {state?.state === 'store' && (
-          <button
-            className={`${state.behind ? 'btn-accent' : 'btn-ghost'} !py-1.5`}
+          <Button
+            variant={state.behind ? 'accent' : 'ghost'}
+            size="sm"
+            icon="external-link"
             onClick={() => void window.studio.update.openStore()}
           >
             {t('Open the Microsoft Store')}
-          </button>
+          </Button>
         )}
-        <label className="flex items-center gap-2 text-xs text-muted">
+        <label className="flex items-center gap-2 text-xs text-muted sm:ml-auto">
           {t('Release channel')}
           <select
             className="input !w-32 !py-1 text-xs"
@@ -494,9 +529,8 @@ function UpdateCard(): JSX.Element {
           </select>
         </label>
       </div>
-      <p className="text-[11px] text-muted">
-        Stable is finished releases only. Beta and Alpha get new features earlier and break
-        more often. Nothing downloads or installs without you asking.
+      <p className="text-xs text-muted">
+        {t('Stable is finished releases only. Beta and Alpha get new features earlier and break more often. Nothing downloads or installs without you asking.')}
       </p>
     </div>
   )
@@ -517,10 +551,11 @@ function SetupCard(): JSX.Element {
     <div className="card space-y-3" aria-label="Setup">
       <h3 className="font-semibold text-ink">{t('Setup')}</h3>
       {pre === null ? (
-        <p className="text-sm text-muted">Checking what this install has…</p>
+        <p className="text-sm text-muted">{t('Checking what this install has…')}</p>
       ) : missing.length === 0 ? (
-        <p className="text-sm text-muted">
-          Everything Solaris Studio needs is installed and working.
+        <p className="text-sm text-muted flex items-center gap-2">
+          <Icon name="check" size={14} className="text-success shrink-0" />
+          {t('Everything Solaris Studio needs is installed and working.')}
         </p>
       ) : (
         <div className="text-sm">
@@ -536,12 +571,9 @@ function SetupCard(): JSX.Element {
           </ul>
         </div>
       )}
-      <button
-        className="btn-ghost !py-1.5"
-        onClick={() => window.dispatchEvent(new Event('open-setup-wizard'))}
-      >
+      <Button variant="ghost" size="sm" icon="wand" onClick={() => window.dispatchEvent(new Event('open-setup-wizard'))}>
         {t('Run setup again')}
-      </button>
+      </Button>
     </div>
   )
 }
@@ -620,14 +652,14 @@ function MinScoreSetting(): JSX.Element {
 
   return (
     <div className="space-y-1">
-      <label className="flex items-center gap-3 text-sm" htmlFor="min-score">
-        <span>{t('Minimum score')}</span>
+      <label className="flex flex-wrap items-center gap-3 text-sm" htmlFor="min-score">
+        <span className="text-ink font-medium">{t('Minimum score')}</span>
         <input
           id="min-score"
           type="number"
           min={0}
           max={100}
-          className="input !w-20 !py-1"
+          className="input !w-20 tabular"
           value={draft}
           disabled={saved === null}
           onChange={(e) => setDraft(e.target.value)}
@@ -681,12 +713,15 @@ function LicenseCard(): JSX.Element {
         <h3 className="font-semibold text-ink">{t('License')}</h3>
         <p className="text-sm text-muted">AGPL-3.0-or-later</p>
       </div>
-      <button
-        className="btn-ghost !py-1.5"
+      <Button
+        variant="ghost"
+        size="sm"
+        icon="external-link"
+        className="shrink-0"
         onClick={() => void window.studio.openExternal('https://github.com/Arch-Axgel/solaris-studio')}
       >
         {t('Source code')}
-      </button>
+      </Button>
     </div>
   )
 }
@@ -797,7 +832,7 @@ function YouTubeDownloadCard(): JSX.Element {
           <label className="flex items-start gap-2 mt-3 text-ink cursor-pointer">
             <input
               type="checkbox"
-              className="mt-1 accent-[var(--color-accent)]"
+              className="mt-0.5 shrink-0"
               onChange={(e) => {
                 wipe = e.target.checked
               }}
@@ -835,9 +870,9 @@ function YouTubeDownloadCard(): JSX.Element {
       </div>
 
       {!supported || !status ? (
-        <button className="btn-ghost" disabled={busy !== null} onClick={() => void connectLegacy()}>
+        <Button variant="ghost" size="sm" icon="youtube" loading={busy !== null} onClick={() => void connectLegacy()}>
           {busy ? t('Opening…') : t('Sign in for YouTube downloads')}
-        </button>
+        </Button>
       ) : (
         <>
           <div className="yt-card-meta">
@@ -1099,13 +1134,14 @@ function HealthLinkCard(): JSX.Element {
 
 function ConfigInfoCard(): JSX.Element {
   return (
-    <div className="card text-sm text-muted">
-      Local models are managed on the{' '}
-      <button className="text-gold hover:underline" onClick={() => navigate({ page: 'models' })}>
-        AI models
-      </button>{' '}
-      page; where the AI runs is chosen under AI above. Advanced options (scoring weights, tracking, captions) live in{' '}
-      <code>config/settings.yaml</code>.
+    <div className="card flex flex-wrap items-center gap-3 text-sm text-muted">
+      <p className="min-w-0 flex-1 basis-80">
+        {t('Local models are managed on the AI models page; where the AI runs is chosen under AI above.')}{' '}
+        {t('Advanced options (scoring weights, tracking, captions) live in')} <code className="sys-code">config/settings.yaml</code>.
+      </p>
+      <Button variant="ghost" size="sm" icon="cpu" iconRight="arrow-right" className="shrink-0" onClick={() => navigate({ page: 'models' })}>
+        {t('AI models')}
+      </Button>
     </div>
   )
 }
@@ -1181,20 +1217,42 @@ export default function Settings({
     const root = content.current
     if (!root || !active) return
     const seen = new Map<string, boolean>()
+    const scroller = root.closest<HTMLElement>('.keep-page')
+    const atBottom = (): boolean => {
+      const el = scroller ?? document.documentElement
+      return el.scrollHeight > el.clientHeight && el.scrollTop + el.clientHeight >= el.scrollHeight - 4
+    }
+    const pickLast = (): void => {
+      const showing = Array.from(root.querySelectorAll<HTMLElement>('[data-section]')).filter((s) => !s.hidden)
+      const last = showing[showing.length - 1]?.dataset.section as SettingsSection | undefined
+      if (last) setCurrent(last)
+    }
     const io = new IntersectionObserver(
       (entries) => {
         for (const e of entries) seen.set((e.target as HTMLElement).dataset.section ?? '', e.isIntersecting)
         if (Date.now() - jumping.current < 900) return
+        if (atBottom()) return pickLast()
         const first = SECTIONS.find((s) => seen.get(s.id))
         if (first) setCurrent(first.id)
       },
       { rootMargin: '-15% 0px -65% 0px' }
     )
     root.querySelectorAll<HTMLElement>('[data-section]').forEach((el) => io.observe(el))
-    return () => io.disconnect()
+    // At the very bottom the last sections can never reach the band above,
+    // so the end of the page selects the last section that is showing.
+    const target: HTMLElement | Window = scroller ?? window
+    const onScroll = (): void => {
+      if (Date.now() - jumping.current < 900 || !atBottom()) return
+      pickLast()
+    }
+    target.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      io.disconnect()
+      target.removeEventListener('scroll', onScroll)
+    }
   }, [active])
 
-  useBreadcrumbs([{ label: t(SECTIONS.find((s) => s.id === current)?.label ?? 'General') }])
+  useBreadcrumbs([{ label: nothing ? t('Search') : t(SECTIONS.find((s) => s.id === current)?.label ?? 'General') }])
 
   const sectionProps = (id: SettingsSection): { id: SettingsSection; title: string; hint?: string; hidden: boolean } => {
     const def = SECTIONS.find((s) => s.id === id)
@@ -1207,7 +1265,7 @@ export default function Settings({
   }
 
   return (
-    <div className="sys-page sys-settings max-w-[1280px] mx-auto p-6">
+    <div className="sys-page sys-settings max-w-[1200px] mx-auto p-6">
       <PageHeader
         eyebrow={t('SYSTEM')}
         title={t('Settings')}
@@ -1341,8 +1399,8 @@ export default function Settings({
             </SettingsItem>
             <SettingsItem id="remote" hidden={!shown('remote')}>
               <div className="card space-y-3">
-                <h3 className="font-semibold text-ink">{t('Advanced settings')}</h3>
-                <p className="text-xs text-muted">{t('For multi-PC setups')}</p>
+                {/* The card's own switch is titled Remote rendering, so the frame only says who it is for. */}
+                <p className="t-micro">{t('For multi-PC setups')}</p>
                 <RemoteRenderCard />
               </div>
             </SettingsItem>

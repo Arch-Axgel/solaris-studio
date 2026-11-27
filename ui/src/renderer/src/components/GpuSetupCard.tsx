@@ -182,8 +182,9 @@ export default function GpuSetupCard(): JSX.Element {
 
   return (
     <Card className="gpu-card">
-      <SectionHeader title={t('GPU')} />
-      <p className="gpu-card-line">{cardLine(report)}</p>
+      {/* Title plus the card line as its hint, the same shape as the Disk and
+          Reclaimable cards next to it (no second line under a big heading). */}
+      <SectionHeader title={t('GPU')} hint={<span className="gpu-card-line">{cardLine(report)}</span>} className="gpu-card-head" />
 
       <ul className="gpu-layers">
         {report.layers.map((layer) => (

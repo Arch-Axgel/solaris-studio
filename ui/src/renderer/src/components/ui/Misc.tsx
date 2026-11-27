@@ -39,7 +39,31 @@ function initials(name: string): string {
   return (words[0][0] + words[1][0]).toUpperCase()
 }
 
-/** A monogram on a gradient picked from the seed (burgundy to gold). */
+/** Avatar gradients: [from hue, sat, light] -> [to hue, sat, light]. Eight
+ *  families inside the Noir palette (wine, plum, copper, brass, violet, rose,
+ *  plus a cool slate and a dark pine for contrast), in an order where each
+ *  differs most from the ones beside it, so creators listed next to each
+ *  other never read as the same colour. */
+const AVATAR_TONES: [number, number, number, number, number, number][] = [
+  [340, 60, 30, 38, 62, 50], // burgundy -> gold
+  [222, 30, 28, 252, 30, 52], // slate -> periwinkle
+  [12, 62, 30, 32, 70, 52], // copper -> amber
+  [292, 38, 28, 326, 48, 50], // plum -> orchid
+  [30, 58, 24, 48, 70, 50], // bronze -> brass
+  [262, 36, 30, 300, 42, 52], // violet -> mauve
+  [352, 56, 36, 10, 64, 58], // rose -> coral
+  [172, 30, 22, 150, 26, 42] // pine -> sage
+]
+
+/** Which tone a seed gets. Creator and channel ids count up one by one, so a
+ *  numeric id walks the list in order (ids 1..8 get eight different tones,
+ *  each unlike the next). Other seeds hash. */
+function avatarTone(seed: string | number, h: number): number {
+  const n = typeof seed === 'number' ? seed : /^\d{1,9}$/.test(seed) ? Number(seed) : NaN
+  return (Number.isFinite(n) ? Math.abs(Math.trunc(n)) : h) % AVATAR_TONES.length
+}
+
+/** A monogram on a gradient picked from the seed (see AVATAR_TONES). */
 export function Avatar({
   seed,
   name,
@@ -55,10 +79,10 @@ export function Avatar({
 }): JSX.Element {
   const [broken, setBroken] = useState(false)
   const h = hash(seed)
-  const a = 330 + (h % 30) // burgundy hues
-  const b = 30 + ((h >> 8) % 20) // gold hues
-  const angle = (h >> 16) % 360
-  const bg = `linear-gradient(${angle}deg, hsl(${a} 58% ${28 + (h % 10)}%), hsl(${b} 55% ${48 + ((h >> 4) % 12)}%))`
+  const [a, as, al, b, bs, bl] = AVATAR_TONES[avatarTone(seed, h)]
+  // A little per-seed variety on top, small enough to keep the family.
+  const angle = 120 + ((h >> 16) % 120)
+  const bg = `linear-gradient(${angle}deg, hsl(${a + ((h >> 3) % 9) - 4} ${as}% ${al}%), hsl(${b} ${bs}% ${bl + ((h >> 8) % 7) - 3}%))`
   return (
     <span
       className={cx('ui-avatar', className)}

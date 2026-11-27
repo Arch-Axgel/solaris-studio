@@ -1,6 +1,6 @@
 import { cloneElement, useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { hideTop, placeFloating, showTop, type Side } from './position'
+import { focusFromKeyboard, hideTop, layerHost, placeFloating, showTop, type Side } from './position'
 
 /** Hover/focus tooltip in the top layer (popover="manual"), so it shows above
  *  modal dialogs too. 300ms delay, Esc hides, wired with aria-describedby. */
@@ -77,7 +77,9 @@ export function Tooltip({
     },
     onFocus: (e: React.FocusEvent<HTMLElement>) => {
       p.onFocus?.(e)
-      if (e.currentTarget.matches(':focus-visible')) show(e.currentTarget, 150)
+      // Keyboard focus only: a programmatic focus right after a hotkey or
+      // click (e.g. a drawer focusing its close button) shows no tooltip.
+      if (e.currentTarget.matches(':focus-visible') && focusFromKeyboard()) show(e.currentTarget, 150)
     },
     onBlur: (e: React.FocusEvent<HTMLElement>) => {
       p.onBlur?.(e)
@@ -97,7 +99,7 @@ export function Tooltip({
           <div ref={panel} id={id} role="tooltip" className="ui-tooltip ui-pop">
             {content}
           </div>,
-          document.body
+          layerHost(anchor.current)
         )}
     </>
   )

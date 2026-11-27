@@ -26,13 +26,11 @@
 .lib-layout.lib-layout-railless { grid-template-columns: 52px minmax(0, 1fr) 360px }
 .lib-layout.lib-layout-narrow { grid-template-columns: 272px minmax(0, 1fr) }
 .lib-layout.lib-layout-narrow.lib-layout-railless { grid-template-columns: 52px minmax(0, 1fr) }
+/* From 1600 up the side columns stop growing (no wider step at 1920), so
+   the clip grid takes the extra room and its toolbar fits on one row. */
 @media (min-width: 1600px) {
   .lib-layout { grid-template-columns: 288px minmax(0, 1fr) 400px }
   .lib-layout.lib-layout-railless { grid-template-columns: 52px minmax(0, 1fr) 400px }
-}
-@media (min-width: 1920px) {
-  .lib-layout { grid-template-columns: 300px minmax(0, 1fr) 440px }
-  .lib-layout.lib-layout-railless { grid-template-columns: 52px minmax(0, 1fr) 440px }
 }
 .lib-page[data-editing] > .lib-layout { visibility: hidden }
 
@@ -213,7 +211,10 @@
   font-size: 0.8rem;
   font-weight: 700;
   letter-spacing: 0.04em;
-  color: rgb(255 243 230 / 0.88);
+  color: var(--color-gold-strong);
+  text-shadow: 0 1px 6px rgb(0 0 0 / 0.5);
+  box-shadow: inset 0 0 0 1px rgb(216 178 99 / 0.18);
+  border-radius: inherit;
 }
 .lib-row-title {
   display: -webkit-box;
@@ -376,11 +377,40 @@
 }
 .lib-stat b { font-weight: 700 }
 .lib-stat-live { color: var(--color-gold-strong); border-color: rgb(216 178 99 / 0.4) }
+/* A rail search or creator filter that narrows this view, shown where its
+   effect is (ED-10): a hidden filter used to read as "no clips". */
+.lib-filter-on {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 4px 3px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  color: var(--color-gold-strong);
+  background: var(--tint-gold);
+  border: 1px solid rgb(216 178 99 / 0.4);
+  animation: rise var(--dur-3) var(--ease-out-expo) backwards;
+}
+.lib-filter-on > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.lib-filter-on button {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  color: var(--color-muted);
+  transition: color var(--dur-2), background var(--dur-2);
+}
+.lib-filter-on button:hover { color: var(--color-ink); background: rgb(12 6 8 / 0.6) }
 
 .lib-toolbar {
   position: sticky;
   top: 0;
-  z-index: 8;
+  /* Above every card tool: the grid is isolated below (ED-05), and this sits
+     on the page's sticky step, so stars and checkboxes scroll under it. */
+  z-index: var(--z-sticky, 10);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -388,18 +418,48 @@
   padding: 8px;
   margin: 0 -8px;
   border-radius: var(--radius-lg);
-  background: var(--glass);
+  /* Nearly opaque: score badges and titles must not read through it. */
+  background: linear-gradient(180deg, rgb(38 20 26 / 0.96), rgb(30 17 21 / 0.96));
   backdrop-filter: var(--glass-blur);
   border: 1px solid var(--color-hairline);
   box-shadow: var(--inner-hi), 0 14px 30px -22px rgb(0 0 0 / 0.95);
 }
-.lib-toolbar .input.lib-select { flex: 0 0 auto; width: 132px }
+/* Its own width: a fixed 112-132px cut "Best score" to "Best scor" (ED-11). */
+.lib-toolbar .input.lib-select { flex: 0 0 auto; width: auto; min-width: max-content }
+.lib-toolbar-group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0 }
+/* The actions wrap as one unit, so Schedule and the calendar never orphan. */
+.lib-toolbar-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.lib-toolbar-actions .ui-btn { flex-shrink: 0 }
+.lib-toolbar-sched { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0 }
+.lib-toolbar { justify-content: space-between; row-gap: 8px }
+/* When the actions drop to their own row they sit under the filters' left
+   edge rather than floating right of an empty gap. */
+@container (max-width: 1000px) {
+  .lib-toolbar-actions { margin-left: 0 }
+}
+/* Just short of one row (a 1920 window with both side columns): Schedule
+   drops to its clock icon, its name kept in the tooltip and aria-label,
+   which is what lets the filters and the actions share a row. Wider, the
+   word fits; narrower, the toolbar wraps anyway and keeps it. */
+@container (min-width: 944px) and (max-width: 1019px) {
+  .lib-toolbar-sched-btn .ui-btn-label { display: none }
+  .lib-toolbar-sched-btn.ui-btn { padding-inline: 8px }
+  .lib-toolbar,
+  .lib-toolbar-group,
+  .lib-toolbar-actions { column-gap: 6px }
+}
 .lib-toolbar-gap { flex: 1 }
 .lib-tool-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 30px;
+  height: 32px;
   padding: 0 12px;
   border-radius: 8px;
   font-size: 0.78rem;
@@ -470,7 +530,7 @@
     radial-gradient(120% 140% at 0% 0%, rgb(143 36 69 / 0.35), transparent 60%),
     var(--color-surface);
   box-shadow: var(--inner-hi), 0 10px 30px -18px rgb(143 36 69 / 0.8);
-  animation: rise var(--dur-4) var(--ease-out-expo) both;
+  animation: rise var(--dur-4) var(--ease-out-expo) backwards;
 }
 .lib-pbar-slim { padding: 8px 12px 10px; border-radius: var(--radius-md) }
 .lib-pbar-row {
@@ -543,10 +603,14 @@
   display: grid;
   gap: 18px;
   grid-template-columns: repeat(auto-fill, minmax(var(--lib-card-w, 190px), 1fr));
+  /* One stacking context for every card and its tools (z 10-11), so none of
+     them can paint over the sticky toolbar above (ED-05). */
+  isolation: isolate;
 }
-.lib-grid-s { --lib-card-w: 128px; gap: 12px }
-.lib-grid-m { --lib-card-w: 160px; gap: 16px }
-.lib-grid-l { --lib-card-w: 228px; gap: 22px }
+/* Far enough apart that each size really changes the column count (ED-06). */
+.lib-grid-s { --lib-card-w: 112px; gap: 12px }
+.lib-grid-m { --lib-card-w: 156px; gap: 16px }
+.lib-grid-l { --lib-card-w: 240px; gap: 22px }
 .lib-grid-item { position: relative; min-width: 0 }
 .lib-tilt { position: relative; border-radius: 14px; height: 100% }
 .lib-tilt.tilt { will-change: transform }
@@ -689,13 +753,15 @@
 }
 .lib-card-publish:hover { background: var(--color-accent); color: var(--color-on-accent); border-color: rgb(216 178 99 / 0.4) }
 .lib-card-check {
+  /* Top left, where a checkbox is looked for; the score badge steps aside
+     for it (ED-18) instead of the two colliding at small sizes. */
   position: absolute;
   z-index: 11;
-  left: 50%;
+  left: 8px;
   top: 8px;
-  transform: translateX(-50%) scale(0.85);
-  width: 24px;
-  height: 24px;
+  transform: scale(0.85);
+  width: 26px;
+  height: 26px;
   border-radius: 8px;
   display: grid;
   place-items: center;
@@ -707,14 +773,43 @@
 }
 .lib-card:hover .lib-card-check,
 .lib-card[data-selecting] .lib-card-check,
-.lib-card-check:focus-visible { opacity: 1; transform: translateX(-50%) scale(1) }
+.lib-card-check:focus-visible { opacity: 1; transform: scale(1) }
+.lib-card-score {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 3;
+  transition: transform var(--dur-3) var(--ease-spring);
+}
+.lib-card:hover .lib-card-score,
+.lib-card:focus-within .lib-card-score,
+.lib-card[data-selecting] .lib-card-score,
+.lib-card[data-checked] .lib-card-score { transform: translateX(32px) }
+/* S cards are too narrow for check + badge + star + trash on one row: the
+   badge steps down under the checkbox instead of sliding into the star. */
+.lib-grid-s .lib-card:hover .lib-card-score,
+.lib-grid-s .lib-card:focus-within .lib-card-score,
+.lib-grid-s .lib-card[data-selecting] .lib-card-score,
+.lib-grid-s .lib-card[data-checked] .lib-card-score { transform: translateY(32px) }
+/* Tools that are invisible until hover take no clicks until then, so an
+   exported card's visible star is never swallowed by the hidden trash. */
+.lib-card-trash,
+.lib-card-publish,
+.lib-card-check,
+.lib-card-star:not(.lib-card-star-on) { pointer-events: none }
+.lib-card:hover :is(.lib-card-trash, .lib-card-publish, .lib-card-check, .lib-card-star),
+.lib-card:focus-within :is(.lib-card-trash, .lib-card-publish, .lib-card-check, .lib-card-star),
+.lib-card[data-selecting] .lib-card-check,
+.lib-card[data-checked] .lib-card-check { pointer-events: auto }
+/* Longform / profile chip: above the duration, clear of the star and trash. */
+.lib-card-profile { position: absolute; right: 8px; bottom: 36px; z-index: 3 }
 .lib-card-check:hover { border-color: var(--color-gold-strong) }
 .lib-card[data-checked] .lib-card-check {
   opacity: 1;
   color: var(--color-base);
   background: var(--grad-solar);
   border-color: var(--color-gold-strong);
-  transform: translateX(-50%) scale(1);
+  transform: scale(1);
   box-shadow: 0 0 14px -2px rgb(216 178 99 / 0.7);
 }
 .lib-card[data-checked] .lib-card-check path {
@@ -786,6 +881,10 @@
   background: var(--color-surface);
   max-width: 760px;
 }
+/* NoClipsExplanation brings its own bordered box: flatten it, so the
+   explanation is one card, not a card in a card (ED-10). */
+.lib-noclips [role='note'] { border: 0; background: none; padding: 0; max-width: none }
+.lib-noclips-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px }
 .lib-noclips-icon {
   width: 40px;
   height: 40px;
@@ -909,8 +1008,27 @@
   transition: color var(--dur-2), background var(--dur-2);
 }
 .lib-bulkbar-link:hover { color: var(--color-ink); background: rgb(46 26 33 / 0.7) }
+/* A button never shrinks below its label: squeezed, the labels were cut to
+   one letter ('E', 'P', 'D…') and Delete could not be told apart (ED-04). */
+.lib-bulkbar > *,
+.lib-bulkbar .ui-btn { flex-shrink: 0 }
+.lib-bulkbar .ui-btn-label { overflow: visible }
 @container (max-width: 620px) {
   .lib-bulkbar .ui-kbd-group { display: none }
+  /* Icon-only: the label stays as the accessible name, and each has a title. */
+  .lib-bulkbar .ui-btn { padding-inline: 9px }
+  .lib-bulkbar .ui-btn-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .lib-bulkbar { gap: 6px; padding: 6px 8px 6px 10px }
+}
+@container (max-width: 380px) {
+  .lib-bulkbar-count .text-xs { display: none }
 }
 .lib-center { container-type: inline-size }
 
@@ -963,8 +1081,50 @@
   background: rgb(12 6 8 / 0.45);
   border: 1px solid var(--color-hairline);
 }
-.lib-inspector-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center }
-.input.lib-folder-input { width: auto; flex: 1; min-width: 120px }
+/* Actions in a tidy grid at the library's own (small) control size, not a
+   ragged wrap of 44px buttons (ED-12). */
+.lib-inspector-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px }
+.lib-inspector-body :is(.lib-inspector-actions, .lib-export-actions) > :is(.btn-accent, .btn-ghost) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  border-radius: 10px;
+}
+.lib-export-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--color-hairline);
+  background: rgb(12 6 8 / 0.3);
+}
+.lib-export-folder { display: flex; gap: 6px; min-width: 0 }
+.input.lib-folder-input { width: auto; flex: 1; min-width: 0; font-size: 0.82rem; padding-block: 7px }
+.btn-ghost.lib-folder-pick { display: inline-grid; place-items: center; width: 38px; padding: 0; flex-shrink: 0; border-radius: 10px }
+.lib-export-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px }
+.lib-inspector-fields .input { font-size: 0.875rem }
+/* Title and Description grow with their text (Chromium 123+). */
+.input.lib-autogrow {
+  field-sizing: content;
+  resize: none;
+  min-height: 2.6rem;
+  max-height: 9rem;
+  line-height: 1.4;
+}
+.input.lib-autogrow-tall { min-height: 5rem; max-height: 14rem }
+.lib-time-label { display: flex; align-items: baseline; justify-content: space-between; gap: 6px }
+.lib-time-tc {
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--color-muted);
+  font-weight: 500;
+}
 .lib-inspector-notice {
   font-size: 0.82rem;
   color: var(--color-gold-strong);
@@ -1104,7 +1264,7 @@
     radial-gradient(70% 90% at 18% 30%, rgb(58 18 32 / 0.85), transparent 70%),
     radial-gradient(40% 50% at 90% 0%, rgb(216 178 99 / 0.06), transparent),
     var(--color-abyss);
-  animation: fade-in var(--dur-3) var(--ease-out) both;
+  animation: fade-in var(--dur-3) var(--ease-out) backwards;
 }
 .edit-bay-top {
   display: flex;
@@ -1117,7 +1277,7 @@
   backdrop-filter: var(--glass-blur);
   position: relative;
   z-index: 4;
-  animation: rise var(--dur-4) var(--ease-out-expo) both;
+  animation: rise var(--dur-4) var(--ease-out-expo) backwards;
 }
 .edit-bay-top::after {
   content: '';
@@ -1241,7 +1401,7 @@
     0 0 0 1px rgb(216 178 99 / 0.28),
     0 30px 80px -24px rgb(0 0 0 / 0.95),
     0 0 60px -20px rgb(143 36 69 / 0.7);
-  animation: letterbox var(--dur-4) var(--ease-out-expo) both;
+  animation: letterbox var(--dur-4) var(--ease-out-expo) backwards;
 }
 .edit-bay-video { background: #000 }
 .edit-bay-safe-layer { animation: fade-in var(--dur-3) var(--ease-out) both }
@@ -1264,19 +1424,53 @@
   padding: 18px 22px 60px;
   border-left: 1px solid var(--color-hairline);
   background: linear-gradient(180deg, rgb(30 17 21 / 0.92), rgb(19 10 13 / 0.96));
-  animation: slide-in-right var(--dur-4) var(--ease-out-expo) both;
+  /* backwards, never both: a transform left behind by the fill made this
+     panel the containing block of every fixed layer inside it (ED-02). */
+  animation: slide-in-right var(--dur-4) var(--ease-out-expo) backwards;
+}
+/* Wide windows: the form stops at a readable width rather than stretching
+   980px selects next to 12px helper text (ED-14); the stage takes the rest. */
+@media (min-width: 1600px) {
+  .edit-bay-body { grid-template-columns: minmax(0, 1fr) minmax(0, 880px) }
+  .edit-bay-landscape .edit-bay-body { grid-template-columns: minmax(0, 1fr) minmax(0, 820px) }
+}
+/* Mid widths keep the side-by-side bay with a narrower stage, so the clip
+   stays in view while its captions and colour are edited (ED-07). */
+@media (max-width: 1279px) {
+  .edit-bay-body { grid-template-columns: minmax(240px, 0.7fr) minmax(0, 1.3fr) }
+  .edit-bay-landscape .edit-bay-body { grid-template-columns: minmax(0, 1fr) minmax(380px, 1fr) }
+  .edit-bay-stage { padding: 14px }
+  .edit-bay-panel { padding: 14px 16px 48px }
 }
 @media (max-width: 1099px) {
-  .edit-bay-body,
-  .edit-bay-landscape .edit-bay-body { grid-template-columns: 1fr; overflow-y: auto }
-  .edit-bay-stage { min-height: 60vh }
-  .edit-bay-panel { overflow: visible; border-left: 0; border-top: 1px solid var(--color-hairline) }
   .edit-bay-timecode { display: none }
+}
+/* Small windows: one column that scrolls, the stage pinned on top so the
+   preview never leaves the screen while a tab is edited. */
+@media (max-width: 899px) {
+  .edit-bay { --bay-stage-h: clamp(220px, 40vh, 380px) }
+  .edit-bay-body,
+  .edit-bay-landscape .edit-bay-body { display: block; overflow-y: auto }
+  .edit-bay-stage {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    height: var(--bay-stage-h);
+    padding: 10px;
+    box-shadow: 0 12px 24px -18px rgb(0 0 0 / 0.9);
+    border-bottom: 1px solid var(--color-hairline);
+  }
+  .edit-bay-stage-inner { gap: 6px }
+  .edit-bay-portrait .edit-bay-frame { height: calc(100% - 30px) }
+  .edit-bay-landscape .edit-bay-frame { width: auto; height: calc(100% - 30px); max-width: 100% }
+  .edit-bay-panel { overflow: visible; border-left: 0; padding: 12px 12px 40px }
+  html .edit-bay [role='tablist'] { top: var(--bay-stage-h) }
 }
 
 /* ---- TimelineEditor, styled from outside (roles and attributes only) ---- */
 .edit-bay [role='tablist'] {
   position: sticky;
+  /* the panel's own top padding, so it docks flush with the panel's edge */
   top: -18px;
   z-index: 3;
   gap: 4px;
@@ -1288,7 +1482,20 @@
   backdrop-filter: var(--glass-blur);
   box-shadow: inset 0 0 0 1px var(--color-hairline), 0 10px 24px -18px rgb(0 0 0 / 0.9);
   scrollbar-width: none;
+  scroll-behavior: smooth;
+  scroll-padding-inline: 28px;
+  --fade-l: 0px;
+  --fade-r: 0px;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 var(--fade-l), #000 calc(100% - var(--fade-r)), transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 var(--fade-l), #000 calc(100% - var(--fade-r)), transparent);
 }
+/* TimelineEditor marks which edges have more tabs past them (ED-09). */
+.edit-bay [role='tablist'][data-more-left] { --fade-l: 36px }
+.edit-bay [role='tablist'][data-more-right] { --fade-r: 36px }
+@media (max-width: 1279px) {
+  .edit-bay [role='tablist'] { top: -14px }
+}
+html[data-motion='reduced'] .edit-bay [role='tablist'] { scroll-behavior: auto }
 .edit-bay [role='tablist']::-webkit-scrollbar { display: none }
 .edit-bay [role='tablist'] > [role='tab'] {
   position: relative;
@@ -1354,6 +1561,82 @@
 .edit-bay-panel input[type='checkbox'],
 .edit-bay-panel input[type='radio'] { accent-color: var(--color-gold) }
 .edit-bay-panel video { border-radius: 12px }
+/* Colour inputs are a swatch, not a full-width white bar that reads as an
+   empty text field (ED-13; the swatch itself is themed in theme.css). */
+.edit-bay-panel input[type='color'] { display: block; width: 56px; max-width: 72px; height: 36px; flex-shrink: 0 }
+.edit-bay-panel input[type='color'][aria-label] { width: 40px; height: 28px }
+
+/* Shared field language for the Audio and Effects tabs (ED-14). */
+.bay-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px 14px;
+  align-items: start;
+}
+.bay-fields > .bay-wide { grid-column: 1 / -1 }
+.bay-field { display: flex; flex-direction: column; gap: 6px; min-width: 0 }
+.bay-field > .label { margin: 0 }
+.bay-field .input { font-size: 0.85rem; min-height: 36px; padding-block: 6px }
+.bay-inline { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 36px }
+.bay-inline > input[type='range'] { flex: 1; min-width: 0 }
+.bay-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  font-size: 0.85rem;
+  color: var(--color-ink);
+  cursor: pointer;
+}
+.bay-help { font-size: 0.75rem; color: var(--color-muted); line-height: 1.45 }
+.bay-section {
+  border: 1px solid rgb(74 42 52 / 0.6);
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* The transcript reads as text, not a justified wall of chips (ED-22). */
+.bay-transcript {
+  max-height: 10rem;
+  overflow-y: auto;
+  padding: 10px 12px 18px;
+  border-radius: 10px;
+  background: var(--color-base);
+  line-height: 1.75;
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 16px), transparent);
+  mask-image: linear-gradient(180deg, #000 calc(100% - 16px), transparent);
+}
+
+/* Small header tools in the timeline card (ED-15): real 28px targets. */
+.bay-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  color: var(--color-muted);
+  border: 1px solid transparent;
+  transition: color var(--dur-2), border-color var(--dur-2), background-color var(--dur-2);
+}
+.bay-tool:hover:not(:disabled) { color: var(--color-ink); border-color: var(--color-hairline); background-color: rgb(46 26 33 / 0.6) }
+.bay-tool:disabled { opacity: 0.4; cursor: not-allowed }
+.bay-tool-danger:hover:not(:disabled) { color: var(--color-error); border-color: rgb(229 72 77 / 0.35) }
+.bay-tool-icon { width: 28px; padding: 0; justify-content: center }
+
+/* The disabled Apply bar is a quiet outline, not the heaviest thing in the
+   panel while nothing has changed (ED-22). */
+.edit-bay-panel .btn-accent.bay-apply:disabled {
+  background: transparent;
+  color: var(--color-muted);
+  border: 1px dashed var(--color-line);
+  box-shadow: none;
+  opacity: 1;
+}
 
 /* =========================================================================
    Narrow windows and reduced motion / effects
@@ -1383,3 +1666,67 @@ html[data-effects='reduced'] .edit-bay-top { backdrop-filter: none }
 /* Tailwind also has a `collapse` utility (visibility: collapse) that lands on
    the shared .collapse lane; keep B4's lanes visible. */
 .lib-page .collapse { visibility: visible }
+
+/* =========================================================================
+   Polish (editor area pass)
+   ========================================================================= */
+.edit-bay-chip.edit-bay-play { width: 30px; padding: 0; justify-content: center; color: var(--color-gold-strong) }
+/* Header controls never squeeze: the title takes what is left. */
+.edit-bay-top > :not(.min-w-0) { flex-shrink: 0 }
+@media (max-width: 899px) {
+  .edit-bay-top { gap: 6px; padding: 8px 10px; min-height: 48px }
+  .btn-ghost.edit-bay-back { padding: 5px 10px; font-size: 0.78rem }
+  .edit-bay-title { font-size: 0.92rem; padding: 4px 6px }
+  .edit-bay-title .text-muted { display: none }
+  .edit-bay-safe-pick { display: none }
+}
+/* The timeline card inside the panel: one radius and calmer padding. */
+.edit-bay-panel > .card { padding: 16px; border-radius: 16px }
+@media (max-width: 899px) {
+  .edit-bay-panel > .card { padding: 12px }
+}
+/* Tool buttons in the timeline row share one height. */
+.edit-bay-panel .card > .flex.gap-2.flex-wrap > button { min-height: 32px }
+/* "Layout" reads as the same field label as the other tabs' (ED-14). */
+.bay-layout-row > .text-muted:first-child {
+  width: 100%;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-gold, var(--color-gold));
+}
+/* The panel's own layers (the playhead is z-10) stay inside it, so nothing
+   in it can paint over the pinned stage when the bay scrolls as one column. */
+.edit-bay-panel { isolation: isolate }
+
+/* ---- CaptionStyleControls (Create, Queue, Edit Bay, Subtitles) ----------
+   The example sits beside the controls whenever both fit (a 320px form and
+   the 9:16 mock), and drops under them, centred, in narrow panels. */
+.caption-style { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 20px }
+.caption-style-controls { flex: 999 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 6px }
+.caption-style-controls > .grid { margin-bottom: 6px }
+.caption-style-example { flex: 1 0 112px; min-width: 0 }
+/* One 36px row under each label, so the swatch and the slider beside it
+   line up with each other and with the selects. */
+.caption-style-row { display: flex; align-items: center; gap: 10px; height: 36px; margin-top: 4px }
+.caption-style input[type='color'].caption-style-swatch {
+  display: block;
+  width: 44px;
+  max-width: none;
+  height: 32px;
+  padding: 3px;
+  flex-shrink: 0;
+  border-radius: 8px;
+}
+.caption-style input[type='color'].caption-style-swatch.caption-style-swatch-sm { width: 36px; height: 28px }
+/* Checkbox rows: the label is the 28px hit target, the box stays small. */
+.caption-style-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding-block: 2px;
+  font-size: 0.875rem;
+  cursor: pointer;
+}

@@ -1,9 +1,16 @@
 import { Icon, type IconName } from '../icons'
-import { usePageActive } from '../../lib/stores/useVisible'
+import { PAGES } from '../../lib/nav'
+import { usePageActive, usePageId } from '../../lib/stores/useVisible'
 
-/** Page title block: gold eyebrow, display title, a foil rule that draws in,
- *  then an optional subtitle. The active page's <h1> carries the shared
- *  `page-title` view-transition name (pass vtName="page-title"). */
+/** Page title block: an icon tile, gold eyebrow, display title, a foil rule
+ *  that draws in, then an optional subtitle. The active page's <h1> carries
+ *  the shared `page-title` view-transition name (pass vtName="page-title").
+ *
+ *  A page's own header (vtName="page-title") gets its rail icon when it names
+ *  none, so the title sits at the same x on every page. The Clip Editor is the
+ *  exception: its header names the open video in a narrow centre column.
+ *  Pass icon={false} to leave the tile out. Actions line up with the title,
+ *  not the subtitle (shell.css .ui-page-actions). */
 export function PageHeader({
   eyebrow,
   title,
@@ -17,17 +24,22 @@ export function PageHeader({
   title: string
   subtitle?: React.ReactNode
   actions?: React.ReactNode
-  icon?: IconName
+  icon?: IconName | false
   vtName?: string
   className?: string
 }): JSX.Element {
   const active = usePageActive()
+  const page = usePageId()
+  const tile =
+    icon === false
+      ? null
+      : (icon ?? (vtName === 'page-title' && page !== 'studio' ? PAGES.find((p) => p.id === page)?.icon : undefined))
   return (
     <header className={`ui-page-header ${className ?? ''}`}>
       <div className="flex items-start gap-4 min-w-0">
-        {icon && (
+        {tile && (
           <span className="ui-page-icon" aria-hidden>
-            <Icon name={icon} size={22} />
+            <Icon name={tile} size={22} />
           </span>
         )}
         <div className="min-w-0">

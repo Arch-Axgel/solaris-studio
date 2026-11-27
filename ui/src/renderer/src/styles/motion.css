@@ -424,9 +424,18 @@ dialog[open]::backdrop {
 .toast[data-leaving] { opacity: 0; transform: translateX(24px) }
 
 /* ---------- 2.5 page transitions ---------- */
-.page-active { view-transition-name: page }
+/* Named ONLY while a navigation transition runs (nav.ts sets data-nav-dir
+   before startViewTransition and removes it when it finishes). A permanent
+   view-transition-name made every active page its own stacking context, so
+   nothing inside a page could ever paint above the rail or top bar. */
+html[data-nav-dir] .page-active { view-transition-name: page }
+.keep-page.page-enter { animation: page-fade-in var(--dur-3) var(--ease-out) both }
+@keyframes page-fade-in {
+  from { opacity: 0 }
+  to { opacity: 1 }
+}
 .rail-indicator { view-transition-name: rail-indicator }
-.page-title-active { view-transition-name: page-title }
+html[data-nav-dir] .page-title-active { view-transition-name: page-title }
 ::view-transition-old(page) { animation: drop-out var(--dur-3) var(--ease-in-out) both }
 ::view-transition-new(page) { animation: rise var(--dur-4) var(--ease-out-expo) both }
 html[data-nav-dir='back']::view-transition-new(page) { animation-name: rise-back }

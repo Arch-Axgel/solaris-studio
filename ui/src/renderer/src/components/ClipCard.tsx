@@ -107,16 +107,11 @@ export default function ClipCard({
           className="lib-card-poster"
         >
           <span className="lib-card-scrim" aria-hidden />
-          <span className="absolute top-2 left-2 z-[3]">
+          <span className="lib-card-score">
             <ScoreBadge score={clip.score} />
           </span>
-          {badge && (
-            <span
-              className={`lib-chip lib-chip-gold absolute ${onDelete ? 'top-9' : 'top-2'} right-2 z-[3]`}
-            >
-              {badge}
-            </span>
-          )}
+          {/* Above the duration: the top right belongs to the star and trash. */}
+          {badge && <span className="lib-chip lib-chip-gold lib-card-profile">{badge}</span>}
           {/* Under the score badge: Publish takes the bottom left on hover. */}
           {suggested && (
             <span
@@ -129,7 +124,9 @@ export default function ClipCard({
           <span className="lib-card-duration t-mono absolute bottom-2 right-2 z-[3]">
             {clock(duration)}
           </span>
-          {onOpen && (
+          {/* Not while picking clips: a click there checks the card, so the
+              hint would promise the wrong thing. */}
+          {onOpen && !selecting && (
             <span className="lib-card-open" aria-hidden>
               <Icon name="scissors" size={14} /> {t('Double-click to edit')}
             </span>

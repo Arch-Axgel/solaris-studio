@@ -80,7 +80,7 @@ export const HELP: Partial<Record<Page, PageHelp>> = {
         steps: [
           'Open the failed row to read why.',
           'Press Retry to run it again. Use View log if you want the technical detail.',
-          'Still stuck? Use Report a problem in Help and the log is attached for you.'
+          'Still stuck? Press Feedback at the bottom of the left rail and keep technical details on: the recent log goes with your report.'
         ]
       },
       {

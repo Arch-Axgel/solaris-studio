@@ -3,6 +3,7 @@ import { api } from '../lib/api'
 import { openAISetup } from '../lib/aiSetup'
 import { speedNote } from '../lib/modelSpeed'
 import type { InstalledModel } from '../lib/types'
+import { Icon } from './icons'
 import { Popover, Tooltip } from './ui'
 
 /** Two letters for the collapsed rail chip: "llama3.1:8b" → "L3", "qwen2.5" → "Q2". */
@@ -85,23 +86,23 @@ export default function ModelSwitcher({ compact = false }: { compact?: boolean }
       return (
         <div className="model-chip-wrap">
           <Tooltip content={`${cloud} · Your own key · change in Settings`} side="right">
+            {/* A sparkle, not initials: "E5" for ernie-5.5 read like an error code. */}
             <button type="button" className="model-chip model-chip-cloud" onClick={openAI} aria-label={`AI model: ${cloud}`}>
-              {initialsOf(cloud.split(' · ').pop() ?? cloud)}
+              <Icon name="sparkle" size={16} />
             </button>
           </Tooltip>
         </div>
       )
     return (
       <div className="model-switcher">
-        <label className="label px-1">AI model</label>
-        <button
-          className="input mt-1 text-sm text-left truncate"
-          title={cloud}
-          onClick={openAI}
-        >
-          {cloud}
+        <label className="label px-1 model-switcher-label">AI model</label>
+        {/* A row that opens Settings › AI (not a field: it isn't editable here). */}
+        <button type="button" className="model-row mt-1" title={cloud} onClick={openAI} aria-label={`AI model: ${cloud}`}>
+          <Icon name="sparkle" size={15} className="text-gold shrink-0" />
+          <span className="min-w-0 flex-1 truncate">{cloud}</span>
+          <Icon name="chevron-right" size={14} className="text-muted shrink-0" />
         </button>
-        <p className="mt-1 px-1 text-[11px] leading-snug text-muted">Your own key · change in Settings</p>
+        <p className="mt-1 px-1 text-[11px] leading-snug text-muted model-switcher-hint">Your own key · change in Settings</p>
       </div>
     )
   }
@@ -113,7 +114,7 @@ export default function ModelSwitcher({ compact = false }: { compact?: boolean }
 
   const panel = (
     <div className={compact ? 'model-switcher model-switcher-pop' : 'model-switcher'}>
-      <label className="label px-1">AI model</label>
+      <label className="label px-1 model-switcher-label">AI model</label>
       <select
         className="input mt-1 text-sm"
         value={active}

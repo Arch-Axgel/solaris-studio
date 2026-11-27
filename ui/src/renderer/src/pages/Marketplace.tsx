@@ -1,6 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { api } from '../lib/api'
 import { t } from '../lib/i18n'
+import { navigate, topLayer, useRoute } from '../lib/nav'
+import { usePageActive } from '../lib/stores/useVisible'
+import { Overlay } from '../components/ui/Overlay'
+import { Button, Callout, EmptyState, PageHeader, SearchInput, Toggle } from '../components/ui'
+import { Icon, type IconName } from '../components/icons'
 import {
   CATEGORY_LABELS,
   DIRECTORY_KINDS,
@@ -86,16 +91,48 @@ const TONE: Record<Tone, string> = {
   danger: 'bg-error/15 text-error border border-error/30'
 }
 
-const FIT_MARK: Record<string, { mark: string; className: string }> = {
-  yes: { mark: '✓', className: 'text-success' },
-  no: { mark: '✕', className: 'text-error' },
-  unknown: { mark: '?', className: 'text-warn' }
+const FIT_MARK: Record<string, { className: string }> = {
+  yes: { className: 'text-success' },
+  no: { className: 'text-error' },
+  unknown: { className: 'text-warn' }
+}
+
+/** Leading marks in the catalog's and the engine's words, drawn with the
+ *  app's icon set instead of text glyphs (a ✓ or ★ renders in whatever font
+ *  has it and never lines up with the icons beside it). */
+const GLYPH_ICONS: Record<string, IconName> = { '✓': 'check', '✔': 'check', '★': 'star', '✕': 'x', '⚠': 'alert' }
+
+/** A line that may open with ✓, ★, ✕ or ⚠: the mark becomes an icon. The
+ *  text is already translated (the English key keeps its mark). */
+function Marked({ text, size = 12 }: { text: string; size?: number }): JSX.Element {
+  const m = /^\s*([✓✔★✕⚠])\uFE0F?\s*/u.exec(text)
+  if (m) {
+    return (
+      <>
+        <Icon name={GLYPH_ICONS[m[1]]} size={size} className="market-mark" />
+        <Marked text={text.slice(m[0].length)} size={size} />
+      </>
+    )
+  }
+  // A mark inside a sentence ("… code. ✓ Compatible: …") becomes an icon too.
+  const parts = text.split(/([✓✔★✕⚠])️?/u)
+  if (parts.length === 1) return <>{text}</>
+  return (
+    <>
+      {parts.map((p, i) =>
+        i % 2 === 1 ? <Icon key={i} name={GLYPH_ICONS[p]} size={size} className="market-mark market-mark-inline" /> : p
+      )}
+    </>
+  )
 }
 
 function Pill({ badge }: { badge: Badge }): JSX.Element {
   return (
-    <span className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap ${TONE[badge.tone]}`} title={badge.title}>
-      {badge.label}
+    <span
+      className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap inline-flex items-center gap-1 ${TONE[badge.tone]}`}
+      title={badge.title}
+    >
+      <Marked text={badge.label} />
     </span>
   )
 }
@@ -150,7 +187,7 @@ function Links({ links }: { links: LinkItem[] }): JSX.Element | null {
           <li key={l.url} className="flex items-center gap-2 min-w-0">
             {open ? (
               <button className="text-gold hover:underline text-left" onClick={() => void open(l.url)} title={l.url}>
-                {t(l.label)} ↗
+                {t(l.label)} <Icon name="external-link" size={11} className="align-middle -mt-0.5" />
               </button>
             ) : (
               <span>{t(l.label)}</span>
@@ -170,7 +207,7 @@ function OutLink({ url, children }: { url: string | null; children: ReactNode })
   if (!url) return <span>{children}</span>
   return open ? (
     <button className="text-gold hover:underline text-left" onClick={() => void open(url)} title={url}>
-      {children} ↗
+      {children} <Icon name="external-link" size={11} className="align-middle -mt-0.5" />
     </button>
   ) : (
     <span title={url}>{children}</span>
@@ -195,7 +232,7 @@ function CatalogLink({
   if (!open) return <span title={url}>{children}</span>
   return (
     <button className={className} onClick={() => void open(url, ours)} title={url}>
-      {children} ↗
+      {children} <Icon name="external-link" size={11} className="align-middle -mt-0.5" />
     </button>
   )
 }
@@ -205,6 +242,17 @@ function CatalogLink({
 function githubName(url: string | undefined): string {
   const m = /^https:\/\/github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?\/?$/.exec(url ?? '')
   return m ? `${m[1]}/${m[2]}` : ''
+}
+
+/** The page's own scroller (the keep-alive section), or null outside the app shell. */
+function pageScroller(el: Element | null): HTMLElement | null {
+  return (el?.closest('.keep-page') as HTMLElement | null) ?? null
+}
+
+/** An engine timestamp ("2026-10-13T18:17:01Z") as the reader's local date and time. */
+function whenText(stamp: string): string {
+  const d = new Date(stamp)
+  return Number.isNaN(d.getTime()) ? stamp : d.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
 }
 
 /** The projects a plugin builds on, with their licences: the credit their
@@ -248,7 +296,7 @@ function Numbers({
       <ul className="space-y-0.5">
         {lines.map((l) => (
           <li key={l.text} className={l.tone === 'warn' ? 'text-warn' : ''}>
-            {t(l.text)}
+            <Marked text={t(l.text)} />
           </li>
         ))}
         {comments && (
@@ -271,24 +319,34 @@ function DetailsBlock({
   details,
   requirements,
   hardware,
-  problems
+  problems,
+  brief = false
 }: {
   details: PluginDetails
   requirements?: Requirements
   hardware: Hardware | null
   /** What the engine found missing here; null when it wasn't asked. */
   problems: ProblemHere[] | null | undefined
+  /** Under an installed card, whose header already shows the warning, the badges and the data warnings. */
+  brief?: boolean
 }): JSX.Element {
   const fit = needLines(requirements, hardware, details, problems)
   const exec = executionBadge(details.execution, details.execution_text)
   return (
     <div className="space-y-3 text-sm">
-      {details.notice && <p className="text-warn">⚠ {t(details.notice)}</p>}
-      <div className="flex flex-wrap gap-2 items-center">
-        <Pill badge={tierBadge(details)} />
-        <Pill badge={exec} />
-        <StepPills steps={details.steps} />
-      </div>
+      {!brief && details.notice && (
+        <p className="text-warn flex items-start gap-1.5">
+          <Icon name="alert" size={14} className="mt-0.5 shrink-0" />
+          <span>{t(details.notice)}</span>
+        </p>
+      )}
+      {!brief && (
+        <div className="flex flex-wrap gap-2 items-center">
+          <Pill badge={tierBadge(details)} />
+          <Pill badge={exec} />
+          <StepPills steps={details.steps} />
+        </div>
+      )}
       {details.execution_text && <p className="text-muted">{details.execution_text}</p>}
       {stepLines(details).map((line) => (
         <p key={line} className="text-muted">
@@ -296,7 +354,7 @@ function DetailsBlock({
         </p>
       ))}
 
-      {details.data_warnings.length > 0 && (
+      {!brief && details.data_warnings.length > 0 && (
         <ul className="space-y-1">
           {details.data_warnings.map((w) => (
             <li key={w} className="text-warn font-medium">
@@ -333,11 +391,11 @@ function DetailsBlock({
         ) : (
           <ul className="space-y-0.5">
             {fit.map((f) => (
-              <li key={f.text}>
-                <span className={FIT_MARK[f.fit].className} aria-label={f.fit}>
-                  {FIT_MARK[f.fit].mark}
-                </span>{' '}
-                {t(f.text)}
+              <li key={f.text} className="market-check">
+                <span className={`market-fit ${FIT_MARK[f.fit].className}`} aria-label={f.fit}>
+                  <Icon name={f.fit === 'yes' ? 'check' : f.fit === 'no' ? 'x' : 'help'} size={12} />
+                </span>
+                <span>{t(f.text)}</span>
               </li>
             ))}
           </ul>
@@ -393,12 +451,21 @@ function DetailsBlock({
 /** At a glance, on every card: what it needs and what it asks for, each
  *  permission marked enforced or only declared, and the reminder that it is
  *  code running with the user's rights. */
-function Summary({ details, needs }: { details: PluginDetails; needs: string[] }): JSX.Element {
+function Summary({
+  details,
+  needs,
+  firstParty = false
+}: {
+  details: PluginDetails
+  needs: string[]
+  /** Solaris Studio's own modes: there is no outside developer to state anything. */
+  firstParty?: boolean
+}): JSX.Element {
   return (
     <>
       <p className="text-xs">
         <span className="text-muted">{t('Needs')}: </span>
-        {needs.length ? needs.map((n) => t(n)).join(' · ') : t('nothing stated by the developer')}
+        {needs.length ? needs.map((n) => t(n)).join(' · ') : firstParty ? t('nothing extra') : t('nothing stated by the developer')}
       </p>
       {/* A plugin runs with the user's rights, so none of this is a limit on its own. */}
       <p className="text-xs">
@@ -412,7 +479,12 @@ function Summary({ details, needs }: { details: PluginDetails; needs: string[] }
             ))
           : t('no permissions')}
       </p>
-      {details.notice && <p className="text-xs text-warn">⚠ {t(details.notice)}</p>}
+      {details.notice && (
+        <p className="text-xs text-warn flex items-start gap-1.5">
+          <Icon name="alert" size={12} className="mt-0.5 shrink-0" />
+          <span>{t(details.notice)}</span>
+        </p>
+      )}
     </>
   )
 }
@@ -435,10 +507,10 @@ function ListingCard({
   const fit = fitSummary(needs)
   const tags = listing.tags ?? []
   return (
-    <div className="card market-card lift space-y-2 flex flex-col" data-category={listing.category}>
+    <div className="card market-card lift space-y-2.5 flex flex-col" data-category={listing.category}>
       <div className="flex items-start gap-2">
         <div className="flex-1 min-w-0">
-          <button className="font-semibold text-left hover:text-gold" onClick={onOpen}>
+          <button className="market-card-title" onClick={onOpen}>
             {listing.name}
           </button>
           <p className="text-xs text-muted truncate">
@@ -452,22 +524,32 @@ function ListingCard({
             <Pill badge={{ label: `${t('Installed')} ${listing.installed}`, tone: 'ok', title: '' }} />
           ))}
       </div>
+      {/* At a glance: who stands behind it, one list badge and whether it runs here. Where it runs,
+          its steps and its licence are on its page (Details). */}
       <div className="flex flex-wrap gap-1.5">
         <Pill badge={tierBadge(d)} />
-        {catalogBadges(listing.badges, true).map((b) => (
-          <Pill key={b.label} badge={b} />
-        ))}
-        <Pill badge={executionBadge(d.execution, d.execution_text)} />
-        <StepPills steps={d.steps} />
+        {catalogBadges(listing.badges, true)
+          .slice(0, 1)
+          .map((b) => (
+            <Pill key={b.label} badge={b} />
+          ))}
         {fit && <Pill badge={{ ...fit, title: '' }} />}
-        {listing.license && (
-          <Pill badge={{ label: `${t('Licence')} ${listing.license}`, tone: 'info', title: t('The licence the developer chose') }} />
-        )}
       </div>
       {listing.unofficial && <p className="text-xs text-muted">{listing.unofficial}</p>}
-      <p className="text-sm">{listing.description}</p>
+      <p className="text-sm text-muted line-clamp-3" title={listing.description}>
+        {listing.description}
+      </p>
       {metricLines(listing.metrics).length > 0 && (
-        <p className="text-xs text-muted">{metricLines(listing.metrics).slice(0, 2).map((l) => t(l.text)).join(' · ')}</p>
+        <p className="text-xs text-muted">
+          {metricLines(listing.metrics)
+            .slice(0, 2)
+            .map((l, i) => (
+              <span key={l.text}>
+                {i > 0 && ' · '}
+                <Marked text={t(l.text)} />
+              </span>
+            ))}
+        </p>
       )}
       {listing.events && listing.events.length > 0 && (
         <p className="text-xs">
@@ -482,30 +564,47 @@ function ListingCard({
         </p>
       ))}
       <Summary details={d} needs={needs.map((n) => n.text)} />
-      <div className="flex flex-wrap gap-1.5 mt-auto pt-1">
-        {listing.category && (
-          <span className="text-xs bg-raised px-2 py-0.5 rounded">{categoryLabel(listing.category)}</span>
-        )}
-        {tags.slice(0, 5).map((tag) => (
-          <button
-            key={tag}
-            className="text-xs text-muted hover:text-gold px-1"
-            onClick={() => onTag(tag)}
-            title={t('Show listings with this tag')}
-          >
-            #{tag}
-          </button>
-        ))}
-        {tags.length > 5 && <span className="text-xs text-muted px-1">+{tags.length - 5}</span>}
+      <div className="market-card-foot">
+        <div className="flex flex-wrap items-center gap-1 min-w-0">
+          {listing.category && <span className="market-cat">{t(categoryLabel(listing.category))}</span>}
+          {tags.slice(0, 4).map((tag) => (
+            <button key={tag} className="market-tag" onClick={() => onTag(tag)} title={t('Show listings with this tag')}>
+              #{tag}
+            </button>
+          ))}
+          {tags.length > 4 && <span className="text-xs text-muted px-1">+{tags.length - 4}</span>}
+        </div>
+        <Button variant="ghost" size="sm" iconRight="arrow-right" className="shrink-0" onClick={onOpen}>
+          {t('Details')}
+        </Button>
       </div>
-      <button className="btn-ghost !py-1.5 self-start" onClick={onOpen}>
-        {t('Details')}
-      </button>
     </div>
   )
 }
 
 /** A listing's own page: everything, every version, and Install. */
+/** Esc steps back out of a sub-view (a listing, For developers) when nothing
+ *  else claims the key: no shell layer, modal, popover or floating rail on top,
+ *  and focus not in a text field. */
+function useEscapeBack(enabled: boolean, back: () => void): void {
+  // Pages stay mounted behind others (KeepAlive): only the visible one listens.
+  const active = usePageActive() && enabled
+  const backRef = useRef(back)
+  backRef.current = back
+  useEffect(() => {
+    if (!active) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape' || e.defaultPrevented || topLayer()) return
+      if (document.querySelector('dialog[open], [aria-modal="true"], .ui-pop:popover-open, .rail-scrim')) return
+      const el = e.target as HTMLElement | null
+      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return
+      backRef.current()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [active])
+}
+
 function ListingPage({
   listing,
   hardware,
@@ -524,6 +623,7 @@ function ListingPage({
   onInstall: (source: PluginSource) => void
   onTag: (tag: string) => void
 }): JSX.Element {
+  useEscapeBack(true, onBack)
   const [version, setVersion] = useState(listing.latest)
   const chosen = listing.versions.find((v) => v.version === version) ?? listing.versions[0]
   const latest = listing.versions.find((v) => v.version === listing.latest)
@@ -547,12 +647,13 @@ function ListingPage({
         : `${t('Install')} ${version}`
   return (
     <div className="space-y-4">
-      <button className="btn-ghost !py-1.5" onClick={onBack}>
-        ← {t('Back to results')}
-      </button>
-      <section className="card space-y-4">
+      <Button variant="subtle" size="sm" icon="arrow-left" className="market-back" onClick={onBack}>
+        {t('Back to results')}
+      </Button>
+      <div className="market-listing">
+      <section className="card market-listing-main space-y-4">
         <div>
-          <h3 className="text-xl font-bold">{listing.name}</h3>
+          <h3 className="t-xl text-ink">{listing.name}</h3>
           <p className="text-sm text-muted">
             {/* The id alone: its publisher part is what the list build checked. The author's name is
                 the developer's own words, shown only under "Where it comes from" as theirs. */}
@@ -561,26 +662,31 @@ function ListingPage({
             {listing.category ? ` · ${categoryLabel(listing.category)}` : ''}
           </p>
           {listing.unofficial && <p className="text-sm text-muted mt-1">{listing.unofficial}</p>}
-          {(listing.badges ?? []).length > 0 && (
+          {/* Official/Community is the tier, shown once in the details block below. */}
+          {catalogBadges(listing.badges, true).length > 0 && (
             <div className="flex flex-wrap gap-1.5 mt-2">
-              {catalogBadges(listing.badges).map((b) => (
+              {catalogBadges(listing.badges, true).map((b) => (
                 <Pill key={b.label} badge={b} />
               ))}
             </div>
           )}
           {listing.featured && (
-            <p className="text-xs text-muted mt-1">
-              ★ {t('Featured')}: {listing.featured.reason}
+            <p className="text-xs text-muted mt-2 flex items-center gap-1.5">
+              <Icon name="star" size={12} className="text-gold" />
+              {t('Featured')}: {listing.featured.reason}
             </p>
           )}
         </div>
-        <p>{listing.description}</p>
+        <p className="text-ink/90 leading-relaxed">{listing.description}</p>
         {listing.events && listing.events.length > 0 && (
           <div>
-            <p className="label mb-1">{t('What it finds')}</p>
-            <ul className="text-sm grid grid-cols-2 gap-x-4">
+            <p className="label mb-1.5">{t('What it finds')}</p>
+            <ul className="market-finds">
               {listing.events.map((e) => (
-                <li key={e}>✓ {slugLabel(e)}</li>
+                <li key={e}>
+                  <Icon name="check" size={12} className="text-gold shrink-0" />
+                  {slugLabel(e)}
+                </li>
               ))}
             </ul>
           </div>
@@ -596,7 +702,7 @@ function ListingPage({
             {listing.tags.map((tag) => (
               <button
                 key={tag}
-                className="text-xs bg-raised text-muted hover:text-gold px-2 py-0.5 rounded"
+                className="market-tag market-tag-boxed"
                 onClick={() => onTag(tag)}
                 title={t('Show listings with this tag')}
               >
@@ -656,9 +762,12 @@ function ListingPage({
                   : `${t('Checks this list reports')} (${indexName(listing.index)}):`}
               </li>
               {checks.map((c) => (
-                <li key={c.text} className={c.ok ? '' : 'text-error'}>
-                  {c.ok ? '✓' : '✕'} {t(c.text)}
-                  {!c.ok && ` (${t('not passed')})`}
+                <li key={c.text} className={`market-check ${c.ok ? '' : 'text-error'}`}>
+                  <Icon name={c.ok ? 'check' : 'x'} size={12} className={c.ok ? 'text-success' : ''} />
+                  <span>
+                    {t(c.text)}
+                    {!c.ok && ` (${t('not passed')})`}
+                  </span>
                 </li>
               ))}
               {!official && (
@@ -685,11 +794,15 @@ function ListingPage({
           />
         </div>
 
-        <div className="border-t border-line/50 pt-3 space-y-2">
-          <div className="flex flex-wrap items-center gap-3">
-            <label className="text-sm flex items-center gap-2">
+      </section>
+
+      {/* The install box: beside the details on a wide window (sticky while
+          they scroll), straight under the back button on a narrow one. */}
+      <aside className="card market-listing-aside space-y-3" aria-label={t('Install')}>
+          <div className="space-y-3">
+            <label className="text-sm flex flex-col gap-1.5">
               <span className="label">{t('Version')}</span>
-              <select className="input !w-auto" value={version} onChange={(e) => setVersion(e.target.value)}>
+              <select className="input" value={version} onChange={(e) => setVersion(e.target.value)}>
                 {listing.versions.map((v) => (
                   <option key={v.version} value={v.version}>
                     {v.version}
@@ -698,31 +811,39 @@ function ListingPage({
                 ))}
               </select>
             </label>
-            <button
-              className="btn-accent"
+            <Button
+              variant="accent"
+              icon="download"
+              className="w-full"
               disabled={!manage || Boolean(chosen?.problem_here)}
               title={manage ? '' : t('Installing pipelines needs the Solaris Studio desktop app.')}
               onClick={() => onInstall({ kind: 'index', id: listing.id, version })}
             >
               {action}
-            </button>
+            </Button>
+            {!manage && <p className="text-xs text-muted">{t('Installing pipelines needs the Solaris Studio desktop app.')}</p>}
           </div>
           {chosen?.problem_here && (
-            <p className="text-sm text-error">
-              ✕ {t('This version can’t run here')}: {chosen.problem_here}
+            <p className="text-sm text-error flex items-start gap-1.5">
+              <Icon name="x" size={14} className="mt-0.5 shrink-0" />
+              <span>
+                {t('This version can’t run here')}: {chosen.problem_here}
+              </span>
             </p>
           )}
           {chosen && compatibilityText(chosen.compatibility) && (
             <p className={`text-sm ${compatibilityText(chosen.compatibility)?.tone === 'ok' ? 'text-success' : 'text-warn'}`}>
-              {t(compatibilityText(chosen.compatibility)?.text ?? '')}
+              <Marked text={t(compatibilityText(chosen.compatibility)?.text ?? '')} />
             </p>
           )}
           {chosen && latest && chosen.version !== latest.version && !samePermissions(chosen.permissions, latest.permissions) && (
-            <p className="text-sm text-warn">
-              ⚠{' '}
-              {t(
-                'This version asks for different permissions from the one described above. Install lists exactly what it asks for before anything is installed.'
-              )}
+            <p className="text-sm text-warn flex items-start gap-1.5">
+              <Icon name="alert" size={14} className="mt-0.5 shrink-0" />
+              <span>
+                {t(
+                  'This version asks for different permissions from the one described above. Install lists exactly what it asks for before anything is installed.'
+                )}
+              </span>
             </p>
           )}
           {(works || tested) && (
@@ -732,11 +853,11 @@ function ListingPage({
               {tested ? `${t('Tested with')} ${tested}.` : ''}
             </p>
           )}
-          <p className="text-xs text-muted">
+          <p className="text-xs text-muted border-t border-line/50 pt-3">
             {t('Install shows you exactly what will be installed first. Nothing from the pipeline runs until you process a video with it.')}
           </p>
-        </div>
-      </section>
+      </aside>
+      </div>
     </div>
   )
 }
@@ -777,17 +898,27 @@ function EntryCard({
       {entry.unofficial && <p className="text-xs text-muted">{entry.unofficial}</p>}
       <p className="text-sm">{entry.description}</p>
       {entry.license_note && <p className="text-xs text-muted">{t('Licence note')}: {entry.license_note}</p>}
-      {entry.warning && <p className="text-xs text-warn font-medium">⚠ {entry.warning}</p>}
+      {entry.warning && (
+        <p className="text-xs text-warn font-medium flex items-start gap-1.5">
+          <Icon name="alert" size={12} className="mt-0.5 shrink-0" />
+          <span>{entry.warning}</span>
+        </p>
+      )}
       {numbers.length > 0 && (
         <ul className="text-xs text-muted space-y-0.5">
           {numbers.map((l) => (
             <li key={l.text} className={l.tone === 'warn' ? 'text-warn' : ''}>
-              {t(l.text)}
+              <Marked text={t(l.text)} />
             </li>
           ))}
         </ul>
       )}
-      {entry.featured && <p className="text-xs text-muted">★ {entry.featured.reason}</p>}
+      {entry.featured && (
+        <p className="text-xs text-muted flex items-center gap-1.5">
+          <Icon name="star" size={12} className="text-gold shrink-0" />
+          {entry.featured.reason}
+        </p>
+      )}
       <div className="mt-auto pt-1 space-y-2">
         {entry.setup === 'technical' && (
           <p className="text-xs text-warn">{t('Needs technical setup (command line or Python)')}</p>
@@ -919,21 +1050,20 @@ function CountingNote({ manage }: { manage: boolean }): JSX.Element | null {
   }
   return (
     <div className="space-y-1">
-      <label className="flex items-start gap-2 cursor-pointer">
-        <input
-          type="checkbox"
-          className="size-4 mt-0.5 accent-accent-strong"
-          checked={state.enabled}
-          disabled={!manage || state.locked_off}
-          onChange={(e) => toggle(e.target.checked)}
-        />
-        <span>
-          {t('Count my installs')}. {t(state.text)}
-          {/* plugins.count_installs is in this Windows account's own settings.yaml (core/paths.py), not the whole PC's. */}
-          {state.locked_off && ` ${t('Switched off in your Solaris Studio settings file.')}`}
-          {!state.active && ` ${t('Nothing is counted yet: Solaris Studio’s list doesn’t count installs yet.')}`}
-        </span>
-      </label>
+      <Toggle
+        checked={state.enabled}
+        disabled={!manage || state.locked_off}
+        onChange={toggle}
+        label={t('Count my installs')}
+        description={
+          <>
+            {t(state.text)}
+            {/* plugins.count_installs is in this Windows account's own settings.yaml (core/paths.py), not the whole PC's. */}
+            {state.locked_off && ` ${t('Switched off in your Solaris Studio settings file.')}`}
+            {!state.active && ` ${t('Nothing is counted yet: Solaris Studio’s list doesn’t count installs yet.')}`}
+          </>
+        }
+      />
       {state.locked_off && (
         <TechnicalDetails rows={[['Setting', 'plugins.count_installs: false in settings.yaml']]} />
       )}
@@ -957,19 +1087,13 @@ function OnlineListNote({ manage, online }: { manage: boolean; online: OnlineLis
   }
   return (
     <div className="space-y-1">
-      <label className="flex items-start gap-2 cursor-pointer">
-        <input
-          type="checkbox"
-          className="size-4 mt-0.5 accent-accent-strong"
-          checked={state.automatic}
-          disabled={!manage}
-          onChange={(e) => toggle(e.target.checked)}
-        />
-        <span>
-          {t('Check Solaris Studio’s online list once a day for new pipelines, and for warnings about pipelines you have.')}{' '}
-          {t('It is one file from GitHub; nothing about you or what you browse is sent.')}
-        </span>
-      </label>
+      <Toggle
+        checked={state.automatic}
+        disabled={!manage}
+        onChange={toggle}
+        label={t('Check Solaris Studio’s online list once a day for new pipelines, and for warnings about pipelines you have.')}
+        description={t('It is one file from GitHub; nothing about you or what you browse is sent.')}
+      />
       {problem && <p className="text-error">{problem}</p>}
     </div>
   )
@@ -1002,6 +1126,19 @@ function Browse({
   const [refreshing, setRefreshing] = useState(false)
   const [refreshNote, setRefreshNote] = useState<string | null>(null)
   const [stamp, setStamp] = useState(0)
+  // Opening a listing starts at its top; Back returns to where Browse was.
+  const root = useRef<HTMLDivElement>(null)
+  const browseScroll = useRef(0)
+  const openListing = (id: string | null): void => {
+    const scroller = pageScroller(root.current)
+    if (id && scroller) browseScroll.current = scroller.scrollTop
+    setOpen(id)
+  }
+  useLayoutEffect(() => {
+    const scroller = pageScroller(root.current)
+    if (!scroller) return
+    scroller.scrollTo({ top: open ? 0 : browseScroll.current })
+  }, [open])
   // The other kinds that have something in them. One with nothing made for
   // Solaris Studio yet gets no tab, rather than a tab that opens on nothing.
   const [present, setPresent] = useState<Set<string>>(new Set())
@@ -1098,6 +1235,7 @@ function Browse({
   const listing = open ? data?.plugins.find((p) => p.id === open) : null
   if (listing)
     return (
+      <div ref={root}>
       <ListingPage
         listing={listing}
         hardware={hardware}
@@ -1110,9 +1248,11 @@ function Browse({
         onInstall={onInstall}
         onTag={(tg) => {
           setTag(tg)
+          browseScroll.current = 0
           setOpen(null)
         }}
       />
+      </div>
     )
 
   const others = (data?.indexes ?? []).filter((i) => i.kind === 'other')
@@ -1122,19 +1262,23 @@ function Browse({
     ? t('Press Check for new pipelines below.')
     : t('The Solaris Studio desktop app checks for new pipelines.')
   const filtered = Boolean(q.trim() || category || tag)
+  const clearFilters = (): void => {
+    setQ('')
+    setCategory('')
+    setTag('')
+  }
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap gap-2 items-center">
-        <input
-          className="input flex-1 min-w-[16rem]"
-          placeholder={t('Search: a game, a sport, “podcast”, “captions”…')}
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          aria-label={t('Search the Marketplace')}
-        />
-      </div>
+    <div className="space-y-4" ref={root}>
+      <SearchInput
+        className="market-search"
+        value={q}
+        onChange={setQ}
+        hotkey
+        placeholder={t('Search: a game, a sport, “podcast”, “captions”…')}
+        ariaLabel={t('Search the Marketplace')}
+      />
 
-      <div className="flex flex-wrap gap-1.5 items-center" role="tablist" aria-label={t('Type')}>
+      <div className="market-typetabs" role="tablist" aria-label={t('Type')}>
         {[
           ['pipeline', KIND_LABELS.pipeline],
           ...Object.entries(DIRECTORY_KINDS).filter(([id]) => present.has(id))
@@ -1143,11 +1287,7 @@ function Browse({
             key={id}
             role="tab"
             aria-selected={view === id}
-            className={`text-sm px-3 py-1 rounded-lg border transition-colors ${
-              view === id
-                ? 'bg-accent/20 border-gold/60 text-gold-strong font-medium'
-                : 'border-transparent text-muted hover:text-ink hover:bg-raised/70'
-            }`}
+            className="market-typetab"
             onClick={() => setView(id)}
           >
             {t(label)}
@@ -1166,43 +1306,49 @@ function Browse({
             setQ('')
             setCategory('')
             setTag('')
-            setOpen(id)
+            openListing(id)
           }}
         />
       )}
 
       {view === 'pipeline' && (
       <>
-      <div className="flex flex-wrap gap-1.5">
-        <button
-          className={`text-xs px-2.5 py-1 rounded-full ${!category ? 'bg-accent/20 text-gold-strong border border-gold/60' : 'bg-raised text-muted border border-line/60 hover:border-gold/40 hover:text-ink'}`}
-          onClick={() => setCategory('')}
-        >
+      <div className="market-chips" role="group" aria-label={t('Category')}>
+        <button className="market-chip" aria-pressed={!category} onClick={() => setCategory('')}>
           {t('All')}
         </button>
         {(data?.categories ?? Object.keys(CATEGORY_LABELS)).map((c) => (
-          <button
-            key={c}
-            className={`text-xs px-2.5 py-1 rounded-full ${category === c ? 'bg-accent/20 text-gold-strong border border-gold/60' : 'bg-raised text-muted border border-line/60 hover:border-gold/40 hover:text-ink'}`}
-            onClick={() => setCategory(category === c ? '' : c)}
-          >
+          <button key={c} className="market-chip" aria-pressed={category === c} onClick={() => setCategory(category === c ? '' : c)}>
             {t(categoryLabel(c))}
           </button>
         ))}
         {tag && (
-          <button className="text-xs px-2.5 py-1 rounded-full bg-accent/20 text-gold-strong border border-gold/60" onClick={() => setTag('')}>
-            #{tag} ✕
+          <button className="market-chip" aria-pressed onClick={() => setTag('')} aria-label={`#${tag} · ${t('Clear')}`}>
+            #{tag} <Icon name="x" size={12} />
           </button>
         )}
       </div>
 
-      {error && <div className="card text-error text-sm">{error}</div>}
+      {error && (
+        <Callout tone="error" title={t('Couldn’t load the Marketplace')}>
+          {error}
+        </Callout>
+      )}
       {!data && !error && <p className="text-muted">{t('Loading…')}</p>}
 
       {data && data.plugins.length === 0 && (
         <div className="card text-sm space-y-1">
           {filtered ? (
-            <p>{t('Nothing listed matches that. Try fewer words, or another category.')}</p>
+            <EmptyState
+              compact
+              illustration="search"
+              title={t('Nothing listed matches that. Try fewer words, or another category.')}
+              action={
+                <Button variant="ghost" size="sm" icon="x" onClick={clearFilters}>
+                  {t('Clear search')}
+                </Button>
+              }
+            />
           ) : (
             <>
               <p>{t('No pipelines are listed yet.')}</p>
@@ -1227,7 +1373,7 @@ function Browse({
               key={p.id}
               listing={p}
               hardware={hardware}
-              onOpen={() => setOpen(p.id)}
+              onOpen={() => openListing(p.id)}
               onTag={(tg) => setTag(tg)}
             />
           ))}
@@ -1235,31 +1381,53 @@ function Browse({
       )}
 
       {data && (
-        <div className="text-xs text-muted space-y-1 border-t border-line/50 pt-3">
-          <p>{t(onlineText(data.online, Date.now(), manage))}</p>
+        <div className="market-foot text-xs text-muted space-y-2 border-t border-line/50 pt-4">
+          {data.online?.error ? (
+            <Callout tone="warn" className="text-xs">
+              <p>{t(onlineText(data.online, Date.now(), manage))}</p>
+              {manage && (
+                <Button variant="ghost" size="sm" icon="refresh" className="mt-2" loading={refreshing} onClick={refresh}>
+                  {t('Try again')}
+                </Button>
+              )}
+            </Callout>
+          ) : (
+            <p>{t(onlineText(data.online, Date.now(), manage))}</p>
+          )}
           {others.map((i) => (
             <p key={i.url}>
               {indexName(i.url)}: {i.plugins ?? 0} {i.plugins === 1 ? t('pipeline') : t('pipelines')}
               {` · ${t(fetchedText(i.fetched_at, Date.now()))}`}
             </p>
           ))}
-          {manage && (
-            <button className="btn-ghost !py-1 !px-2 text-xs" onClick={refresh} disabled={refreshing}>
+          {manage && !data.online?.error && (
+            <Button variant="ghost" size="sm" icon="refresh" loading={refreshing} onClick={refresh}>
               {refreshing ? t('Checking…') : t('Check for new pipelines')}
-            </button>
+            </Button>
           )}
           {refreshNote && <p>{refreshNote}</p>}
-          <p>
+          <p className="max-w-3xl">
             {t(
-              'Community: made by someone outside the Solaris Studio project. Its page says which automatic checks its list reports. Nobody at Solaris Studio has read its code. ✓ Compatible: Solaris Studio installed this version and ran it on a test video without errors. That is not a safety check. Browsing here tells nobody what you look at.'
+              'Pipelines made by other developers: some find a video’s moments their own way, and others rate the moments found or say what happens in them. Solaris Studio cuts, frames and captions the clips as usual. Free to list and free to install; Solaris Studio handles no payments.'
             )}
           </p>
-          <OnlineListNote manage={manage} online={data.online} />
-          <CountingNote manage={manage} />
+          <p className="max-w-3xl">
+            <Marked
+              text={t(
+                'Community: made by someone outside the Solaris Studio project. Its page says which automatic checks its list reports. Nobody at Solaris Studio has read its code. ✓ Compatible: Solaris Studio installed this version and ran it on a test video without errors. That is not a safety check. Browsing here tells nobody what you look at.'
+              )}
+            />
+          </p>
+          <div className="market-prefs">
+            <OnlineListNote manage={manage} online={data.online} />
+            <CountingNote manage={manage} />
+          </div>
         </div>
       )}
-      <button className="market-devlink text-xs text-muted hover:text-ink underline" onClick={onDevelopers}>
+      <button className="market-devlink text-xs text-muted hover:text-ink" onClick={onDevelopers}>
+        <Icon name="keyboard" size={14} />
         {t('For developers: install a pipeline you’re writing')}
+        <Icon name="arrow-right" size={12} />
       </button>
       </>
       )}
@@ -1317,10 +1485,10 @@ function ModelRow({
   }
   const state =
     status?.installed === true
-      ? { text: t('On this PC'), className: 'text-success', mark: '✓' }
+      ? { text: t('On this PC'), className: 'text-success', mark: 'check' as IconName }
       : status?.installed === false
-        ? { text: t('Not on this PC'), className: 'text-warn', mark: '✕' }
-        : { text: t('Can’t tell'), className: 'text-muted', mark: '?' }
+        ? { text: t('Not on this PC'), className: 'text-warn', mark: 'x' as IconName }
+        : { text: t('Can’t tell'), className: 'text-muted', mark: 'help' as IconName }
   const licence = status?.license ?? listed?.license
   return (
     <li className="space-y-1">
@@ -1333,8 +1501,9 @@ function ModelRow({
         </span>
       </p>
       <p className="text-xs">
-        <span className={state.className}>
-          {state.mark} {state.text}
+        <span className={`${state.className} inline-flex items-center gap-1`}>
+          <Icon name={state.mark} size={12} />
+          {state.text}
         </span>
         {status?.link === 'copy' && (
           <span className="text-muted"> · {t('stored twice, so it uses twice the space (Windows didn’t let Solaris Studio share one copy)')}</span>
@@ -1357,8 +1526,11 @@ function ModelRow({
       </p>
       {status?.note && <p className="text-xs text-muted">{t(status.note)}</p>}
       {(status?.pickle_files ?? []).length > 0 && (
-        <p className="text-xs text-warn">
-          ⚠ {(status?.pickle_files ?? []).join(', ')}: {t('files of a kind that can run hidden programs when they’re opened.')}
+        <p className="text-xs text-warn flex items-start gap-1.5">
+          <Icon name="alert" size={12} className="mt-0.5 shrink-0" />
+          <span>
+            {(status?.pickle_files ?? []).join(', ')}: {t('files of a kind that can run hidden programs when they’re opened.')}
+          </span>
         </p>
       )}
       {fetchable && status?.installed === false && !plan && (
@@ -1553,16 +1725,18 @@ function InstalledCard({
             {sourceLine(plugin.source) ? ` · ${t(sourceLine(plugin.source))}` : ''}
           </p>
         </div>
-        <label className="flex items-center gap-2 text-sm cursor-pointer shrink-0">
-          <input
-            type="checkbox"
-            className="size-4 accent-accent-strong"
+        <div className="flex items-center gap-2 text-sm shrink-0">
+          <span className={plugin.enabled ? 'text-ink' : 'text-muted'} aria-hidden>
+            {plugin.enabled ? t('On') : t('Off')}
+          </span>
+          <Toggle
+            hideLabel
+            label={`${plugin.name}: ${plugin.enabled ? t('On') : t('Off')}`}
             checked={plugin.enabled}
             disabled={busy || !manage || (blocked && !plugin.enabled)}
-            onChange={(e) => run(() => plugins.setEnabled(plugin.id, e.target.checked))}
+            onChange={(v) => run(() => plugins.setEnabled(plugin.id, v))}
           />
-          {plugin.enabled ? t('On') : t('Off')}
-        </label>
+        </div>
       </div>
       <div className="flex flex-wrap gap-1.5">
         <Pill badge={tierBadge(plugin.details)} />
@@ -1573,13 +1747,15 @@ function InstalledCard({
         )}
       </div>
       {plugin.flag && (
-        <p className={`text-sm font-medium ${blocked ? 'text-error' : 'text-warn'}`}>
+        <Callout tone={blocked ? 'error' : 'warn'}>
           {blocked
             ? `${t('Blocked')}: ${plugin.flag.reason ?? t('a list Solaris Studio uses has blocked this version')}. ${t('It can’t run. Remove it.')}`
             : `${t('No longer listed')}: ${plugin.flag.reason ?? t('a list Solaris Studio uses has taken it off')}. ${t('It still runs.')}`}
-        </p>
+        </Callout>
       )}
-      {plugin.problem && <p className="text-sm text-error">{plugin.problem}</p>}
+      {plugin.problem && (
+        <Callout tone="error">{plugin.problem.charAt(0).toUpperCase() + plugin.problem.slice(1)}</Callout>
+      )}
       {(plugin.problems_here ?? []).map((p) => (
         <p key={p.text} className="text-sm text-error">
           {t(p.text)}
@@ -1603,38 +1779,50 @@ function InstalledCard({
       <PluginModels plugin={plugin} overview={models} manage={manage} />
       <div className="flex flex-wrap gap-2">
         {update && !plugin.pinned && (
-          <button
-            className="btn-accent !py-1.5"
+          <Button
+            variant="accent"
+            size="sm"
+            icon="download"
             disabled={busy || !manage}
             onClick={() => onInstall({ kind: 'index', id: plugin.id, version: update.latest })}
           >
             {t('Update to')} {update.latest}
-          </button>
+          </Button>
         )}
         {plugin.previous && (
-          <button
-            className="btn-ghost !py-1.5"
+          <Button
+            size="sm"
+            icon="undo"
             disabled={busy || !manage}
             onClick={() => run(() => plugins.rollback(plugin.id), `${t('Went back to')} ${plugin.previous}.`)}
           >
             {t('Go back to')} {plugin.previous}
-          </button>
+          </Button>
         )}
-        <button
-          className="btn-ghost !py-1.5"
+        <Button
+          size="sm"
+          icon="pin"
           disabled={busy || !manage}
           title={t('A pipeline kept at its version is not offered updates. Installing a version yourself still works.')}
           onClick={() => run(() => plugins.setPinned(plugin.id, !plugin.pinned))}
         >
           {plugin.pinned ? t('Offer updates again') : t('Keep this version (no update offers)')}
-        </button>
-        <button className="btn-ghost !py-1.5" onClick={() => setExpanded(!expanded)} aria-expanded={expanded}>
-          {t('Details')} {expanded ? '▾' : '▸'}
-        </button>
+        </Button>
+        <Button
+          size="sm"
+          variant="subtle"
+          iconRight={expanded ? 'chevron-up' : 'chevron-down'}
+          onClick={() => setExpanded(!expanded)}
+          aria-expanded={expanded}
+        >
+          {t('Details')}
+        </Button>
         {confirmRemove ? (
           <>
-            <button
-              className="btn-ghost !py-1.5 text-error"
+            <Button
+              variant="danger"
+              size="sm"
+              icon="trash"
               disabled={busy || !manage}
               onClick={() =>
                 run(() =>
@@ -1649,15 +1837,15 @@ function InstalledCard({
               }
             >
               {t('Remove it and its keys')}
-            </button>
-            <button className="btn-ghost !py-1.5" onClick={() => setConfirmRemove(false)}>
+            </Button>
+            <Button size="sm" variant="subtle" onClick={() => setConfirmRemove(false)}>
               {t('Cancel')}
-            </button>
+            </Button>
           </>
         ) : (
-          <button className="btn-ghost !py-1.5" disabled={busy || !manage} onClick={() => setConfirmRemove(true)}>
+          <Button size="sm" variant="subtle" icon="trash" disabled={busy || !manage} onClick={() => setConfirmRemove(true)}>
             {t('Remove')}
-          </button>
+          </Button>
         )}
       </div>
       {note && <p className="text-xs text-muted">{note}</p>}
@@ -1669,12 +1857,13 @@ function InstalledCard({
             requirements={plugin.requirements}
             hardware={hardware}
             problems={plugin.problems_here ?? []}
+            brief
           />
           <BuiltOn items={plugin.based_on} />
           <Links links={listingLinks(plugin)} />
           <p className="text-xs text-muted">
             {t('Versions kept')}: {plugin.versions.join(', ')}
-            {plugin.installed_at ? ` · ${t('installed')} ${plugin.installed_at}` : ''}
+            {plugin.installed_at ? ` · ${t('installed')} ${whenText(plugin.installed_at)}` : ''}
           </p>
           <TechnicalDetails rows={[['Source', plugin.source_text]]} />
         </div>
@@ -1708,17 +1897,29 @@ function useCloudAI(): string {
 }
 
 function BuiltinCard({ plugin, cloudAI }: { plugin: BuiltinPlugin; cloudAI: string }): JSX.Element {
+  // The engine words a mode's AI need for the local model; with a cloud AI chosen that is not what runs.
+  const needs = plugin.details.requirements.map((n) =>
+    cloudAI && /local AI model/i.test(n) ? 'Uses the AI chosen in Settings › AI' : n
+  )
   return (
-    <div className="flex items-start gap-3 border-t border-line/50 pt-3">
-      <div className="flex-1 min-w-0">
-        <p className="font-medium">{plugin.name}</p>
+    <div className="market-builtin">
+      <div className="flex-1 min-w-0 space-y-1">
+        <p className="font-medium text-ink">{plugin.name}</p>
         <p className="text-xs text-muted">{plugin.description}</p>
-        <Summary details={plugin.details} needs={plugin.details.requirements} />
         {cloudAI && (
-          <p className="text-xs text-warn font-medium">
-            ⚠ {t('Sends your video’s transcript or audio to the services in your AI settings')} ({cloudAI})
+          <p className="text-xs text-warn flex items-start gap-1.5">
+            <Icon name="alert" size={12} className="mt-0.5 shrink-0" />
+            <span>
+              {t('Sends your video’s transcript or audio to the services in your AI settings')} ({cloudAI})
+            </span>
           </p>
         )}
+        <details className="market-builtin-more">
+          <summary className="sys-tech-summary text-xs text-muted cursor-pointer">{t('What it needs and asks for')}</summary>
+          <div className="mt-1 space-y-0.5">
+            <Summary details={plugin.details} needs={needs} firstParty />
+          </div>
+        </details>
       </div>
       <Pill badge={tierBadge(plugin.details)} />
       {cloudAI ? (
@@ -1777,10 +1978,14 @@ function Installed({
   if (!data) return <p className="text-muted">{t('Loading…')}</p>
   return (
     <div className="space-y-4">
-      {removed && <div className="card text-sm">{removed}</div>}
+      {removed && (
+        <Callout tone="success" onDismiss={() => setRemoved(null)}>
+          {removed}
+        </Callout>
+      )}
       {data.plugins.length === 0 ? (
-        <div className="card text-sm">
-          {t('No community pipelines installed. Find one under Browse.')}
+        <div className="card">
+          <EmptyState compact illustration="search" title={t('No community pipelines installed. Find one under Browse.')} />
         </div>
       ) : (
         data.plugins.map((p) => (
@@ -1797,8 +2002,8 @@ function Installed({
         ))
       )}
       <section className="card space-y-1">
-        <h3 className="font-semibold">{t('Built into Solaris Studio')}</h3>
-        <p className="text-xs text-muted">{t('Always available from the Generate bar’s switches.')}</p>
+        <h3 className="t-md text-ink">{t('Built into Solaris Studio')}</h3>
+        <p className="text-xs text-muted pb-1">{t('Always available from the Generate bar’s switches.')}</p>
         {data.builtin.map((b) => (
           <BuiltinCard key={b.id} plugin={b} cloudAI={cloudAI} />
         ))}
@@ -1869,12 +2074,14 @@ function InstallDialog({
   // and the Generate bar offers only pipelines that are on. A missing field is on.
   const switchedOff = done?.enabled === false
   return (
-    <div
-      className="fixed inset-0 z-50 bg-base/80 backdrop-blur-sm grid place-items-center p-6"
-      role="dialog"
-      aria-modal="true"
-      aria-label={t('Install a pipeline')}
-      onClick={busy ? undefined : onClose}
+    // Top-layer modal (see components/ui/Overlay): the rail and top bar are
+    // dimmed and inert, so nobody navigates away mid-install.
+    <Overlay
+      onClose={onClose}
+      escCloses={!busy}
+      backdropCloses={!busy}
+      label={t('Install a pipeline')}
+      className="p-6"
     >
       <div className="card !rounded-2xl !p-6 w-full max-w-2xl space-y-4 max-h-[85vh] overflow-y-auto shadow-2xl shadow-black/50" onClick={(e) => e.stopPropagation()}>
         {planning && <p className="text-muted">{t('Getting the files and checking them…')}</p>}
@@ -1958,8 +2165,11 @@ function InstallDialog({
         )}
         {done && (
           <div className="space-y-2 text-sm">
-            <p className="text-success">
-              ✓ {done.name} {done.version} {t('is installed.')}
+            <p className="text-success flex items-center gap-1.5">
+              <Icon name="check" size={14} className="shrink-0" />
+              <span>
+                {done.name} {done.version} {t('is installed.')}
+              </span>
             </p>
             {switchedOff && (
               <p className="text-warn">{t('It is switched off, so the Generate bar doesn’t offer it. Switch it on under Installed.')}</p>
@@ -1992,12 +2202,32 @@ function InstallDialog({
           </button>
         </div>
       </div>
-    </div>
+    </Overlay>
   )
 }
 
 export default function Marketplace(_props: { active?: boolean } = {}): JSX.Element {
-  const [tab, setTab] = useState<Tab>(() => takeMarketplaceTab() ?? 'browse')
+  const route = useRoute()
+  const routeTab = route.page === 'marketplace' ? route.params?.tab : undefined
+  const [tab, setTabState] = useState<Tab>(() => takeMarketplaceTab() ?? routeTab ?? 'browse')
+  const rootRef = useRef<HTMLDivElement>(null)
+  // The tab is in the address (#/marketplace?tab=installed), both ways.
+  const setTab = useCallback((next: Tab): void => {
+    setTabState(next)
+    navigate({ page: 'marketplace', params: next === 'browse' ? undefined : { tab: next } }, { replace: true, instant: true })
+  }, [])
+  useEffect(() => {
+    if (routeTab) setTabState(routeTab)
+  }, [routeTab])
+  // A new view starts at its top, not at Browse's scroll position.
+  const firstView = useRef(true)
+  useLayoutEffect(() => {
+    if (firstView.current) {
+      firstView.current = false
+      return
+    }
+    pageScroller(rootRef.current)?.scrollTo({ top: 0 })
+  }, [tab])
   const hardware = useHardware()
   const [manage, setManage] = useState(false)
   const [dialog, setDialog] = useState(false)
@@ -2013,7 +2243,7 @@ export default function Marketplace(_props: { active?: boolean } = {}): JSX.Elem
     }
     window.addEventListener(OPEN_MARKETPLACE, show)
     return () => window.removeEventListener(OPEN_MARKETPLACE, show)
-  }, [])
+  }, [setTab])
 
   useEffect(() => {
     void canManage().then(setManage)
@@ -2040,27 +2270,30 @@ export default function Marketplace(_props: { active?: boolean } = {}): JSX.Elem
     setPlanning(false)
   }
 
-  // Two tabs. For developers opens from the bottom of Browse and keeps Browse lit.
+  // Browse and Installed. For developers opens from a quiet link at the bottom
+  // of Browse; while it is open it shows as its own lit tab, so the tab row
+  // says where you are instead of pointing at Browse.
   const TABS: { id: Tab; label: string }[] = [
     { id: 'browse', label: 'Browse' },
     { id: 'installed', label: 'Installed' }
   ]
-  const lit: Tab = tab === 'developers' ? 'browse' : tab
+  const shownTabs: { id: Tab; label: string }[] =
+    tab === 'developers' ? [...TABS, { id: 'developers', label: 'For developers' }] : TABS
+  const lit: Tab = tab
+  useEscapeBack(tab === 'developers' && !dialog, () => setTab('browse'))
 
   return (
-    <div className="market sys-page p-6 space-y-5 max-w-6xl mx-auto">
-      <div className="market-head">
-        <h2 className="t-xl text-ink">{t('Marketplace')}</h2>
-        <p className="text-sm text-muted mt-1 max-w-3xl">
-          {t(
-            'Pipelines made by other developers: some find a video’s moments their own way, and others rate the moments found or say what happens in them. Solaris Studio cuts, frames and captions the clips as usual. Free to list and free to install; Solaris Studio handles no payments.'
-          )}
-        </p>
-        <div className="gold-rule ui-rule-in mt-3" />
-      </div>
-      <MarketplaceFeatured onBrowse={() => setTab('browse')} />
-      <div className="market-tabs" role="tablist">
-        {TABS.map((tb) => (
+    <div ref={rootRef} className="market sys-page p-6 space-y-5 max-w-[1200px] mx-auto">
+      <PageHeader
+        eyebrow={t('DISCOVER')}
+        title={t('Marketplace')}
+        icon="store"
+        vtName="page-title"
+        subtitle={t('Pipelines from other developers that find, rate and understand a video’s moments. Free to list and free to install.')}
+      />
+      {tab === 'browse' && <MarketplaceFeatured onBrowse={() => setTab('browse')} />}
+      <div className="market-tabs" role="tablist" aria-label={t('Marketplace')}>
+        {shownTabs.map((tb) => (
           <button
             key={tb.id}
             role="tab"

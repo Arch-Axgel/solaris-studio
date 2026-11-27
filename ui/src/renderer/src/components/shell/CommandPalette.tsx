@@ -34,10 +34,14 @@ interface Row {
   item?: SearchItem
   /** remembered in Recent */
   recent?: boolean
+  /** runs inside the palette (e.g. "Show all"): doesn't close it */
+  stay?: boolean
   run: () => void | Promise<void>
 }
 
-type Entry = { type: 'head'; group: string; count: number } | { type: 'row'; row: Row; index: number }
+type Entry =
+  | { type: 'head'; group: string; count: number; total?: number }
+  | { type: 'row'; row: Row; index: number }
 
 const RECENT_KEY = 'solaris.ui.palette.recent'
 const MAX_RECENT = 8
@@ -67,6 +71,15 @@ const GROUP_LIMIT: Record<string, number> = {
   'Watched channels': 5,
   'Add-ons': 5
 }
+/** The scope a truncated group's "Show all" row switches to. */
+const GROUP_SCOPE: Record<string, string> = {
+  'Go to': '>',
+  Actions: '>',
+  Clips: '#',
+  Videos: '#',
+  Creators: '@',
+  'Watched channels': '!'
+}
 const KIND_GROUP: Record<SearchItem['kind'], string> = {
   clip: 'Clips',
   video: 'Videos',
@@ -76,7 +89,7 @@ const KIND_GROUP: Record<SearchItem['kind'], string> = {
 }
 
 const SCOPES: Record<string, { label: string; icon: IconName; kinds: RowKind[] }> = {
-  '>': { label: 'Commands', icon: 'command', kinds: ['command'] },
+  '>': { label: 'Commands', icon: 'zap', kinds: ['command'] },
   '@': { label: 'Creators', icon: 'users', kinds: ['creator'] },
   '#': { label: 'Clips', icon: 'scissors', kinds: ['clip', 'video'] },
   '!': { label: 'Channels', icon: 'radar', kinds: ['watch'] }
@@ -108,7 +121,7 @@ function cmdRow(c: Command, score: number, hits: number[], group?: string): Row 
     icon: c.icon,
     label: c.label,
     hits,
-    sub: c.sub ? `${t('Choose')}…` : undefined,
+    sub: c.sub ? (c.hint ?? t('Opens a list to choose from')) : undefined,
     shortcut: c.shortcut,
     kind: 'command',
     score,
@@ -228,6 +241,10 @@ export default function CommandPalette(): JSX.Element | null {
   const [previewOn, setPreviewOn] = useState(true)
   const [scrollTop, setScrollTop] = useState(0)
   const [ctxTick, setCtxTick] = useState(0)
+  // The scope chip (> @ # !). Typing a prefix as the first character turns
+  // it into the chip and takes it out of the text, so the scope isn't shown
+  // twice; Backspace on an empty box clears it.
+  const [scopeKey, setScopeKey] = useState<string | null>(null)
   const wide = useWide()
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -239,7 +256,10 @@ export default function CommandPalette(): JSX.Element | null {
   // Fresh state every time it opens.
   useEffect(() => {
     if (!open) return
-    setQuery(payload?.query ?? '')
+    const initial = payload?.query ?? ''
+    const pre = Object.keys(SCOPES).find((k) => initial.startsWith(k)) ?? null
+    setScopeKey(pre)
+    setQuery(pre ? initial.slice(1) : initial)
     setActive(0)
     setSub(null)
     setRecent(readRecent())
@@ -250,10 +270,17 @@ export default function CommandPalette(): JSX.Element | null {
     return () => clearTimeout(id)
   }, [open, payload])
 
-  // Parse scope prefix.
-  const scopeKey = Object.keys(SCOPES).find((k) => deferred.startsWith(k)) ?? null
   const scope = scopeKey ? SCOPES[scopeKey] : null
-  const q = (scopeKey ? deferred.slice(1) : deferred).trim()
+  const q = deferred.trim()
+
+  const onQueryChange = (v: string): void => {
+    if (!sub && !scopeKey && query === '' && v.length >= 1 && SCOPES[v[0]]) {
+      setScopeKey(v[0])
+      setQuery(v.slice(1).trimStart())
+      return
+    }
+    setQuery(v)
+  }
 
   const rows = useMemo<Row[]>(() => {
     // Sub-list (Switch local model → …)
@@ -376,9 +403,11 @@ export default function CommandPalette(): JSX.Element | null {
         return (groups.get(b)?.[0]?.score ?? 0) - (groups.get(a)?.[0]?.score ?? 0)
       })
     } else {
+      // In the Commands scope the actions lead; pages are one keystroke away.
+      const order = scopeKey === '>' ? ['Recent', 'Actions', 'Go to', ...GROUP_ORDER] : GROUP_ORDER
       names.sort((a, b) => {
-        const ia = GROUP_ORDER.indexOf(a)
-        const ib = GROUP_ORDER.indexOf(b)
+        const ia = order.indexOf(a)
+        const ib = order.indexOf(b)
         return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib)
       })
     }
@@ -388,14 +417,38 @@ export default function CommandPalette(): JSX.Element | null {
       const all = groups.get(n) ?? []
       const limit = q && !scope && !sub ? (GROUP_LIMIT[n] ?? 50) : Infinity
       const shown = all.slice(0, limit)
-      list.push({ type: 'head', group: n, count: all.length })
+      const more = all.length - shown.length
+      const moreScope = more > 0 ? GROUP_SCOPE[n] : undefined
+      // The header counts what is listed; a "Show all" row (when the group has
+      // a scope to jump to) or "7 of 21" says there is more.
+      list.push({ type: 'head', group: n, count: shown.length, total: moreScope ? undefined : all.length })
       for (const r of shown) {
+        list.push({ type: 'row', row: r, index: flat.length })
+        flat.push(r)
+      }
+      if (moreScope) {
+        const r: Row = {
+          key: `more:${n}`,
+          group: n,
+          icon: 'arrow-right',
+          label: `${t('Show all')} ${all.length}`,
+          hits: [],
+          sub: t(GROUP_LABEL[n] ?? n),
+          kind: 'special',
+          score: 0,
+          stay: true,
+          run: () => {
+            setScopeKey(moreScope)
+            inputRef.current?.focus()
+          }
+        }
         list.push({ type: 'row', row: r, index: flat.length })
         flat.push(r)
       }
     }
     return { list, flat }
-  }, [rows, q, scope, sub])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, q, scope, sub, scopeKey])
 
   const flat = entries.flat
   const current = flat[Math.min(active, flat.length - 1)] ?? null
@@ -404,7 +457,7 @@ export default function CommandPalette(): JSX.Element | null {
     setActive(0)
     if (listRef.current) listRef.current.scrollTop = 0
     setScrollTop(0)
-  }, [deferred, sub?.cmd.id])
+  }, [deferred, sub?.cmd.id, scopeKey])
 
   /* ---------- virtual window ---------- */
   const virtual = flat.length > VIRTUAL_AFTER
@@ -459,6 +512,10 @@ export default function CommandPalette(): JSX.Element | null {
 
   const runRow = async (row: Row | null, keepOpen: boolean): Promise<void> => {
     if (!row) return
+    if (row.stay) {
+      await row.run()
+      return
+    }
     if (row.cmd?.sub && !sub) {
       pushRecent(row)
       openSub(row.cmd)
@@ -496,6 +553,9 @@ export default function CommandPalette(): JSX.Element | null {
     } else if (e.key === 'Backspace' && query === '' && sub) {
       e.preventDefault()
       setSub(null)
+    } else if (e.key === 'Backspace' && query === '' && scopeKey) {
+      e.preventDefault()
+      setScopeKey(null)
     } else if (e.key === 'Escape' && sub) {
       // first Esc leaves the sub-list; the next closes the palette
       e.preventDefault()
@@ -504,7 +564,8 @@ export default function CommandPalette(): JSX.Element | null {
     }
   }
 
-  const showPreview = wide && previewOn
+  // No preview pane beside "Nothing matches": two empty states side by side.
+  const showPreview = wide && previewOn && (flat.length > 0 || (!!sub && !sub.items))
   const activeId = current ? `${optId}-${flat.indexOf(current)}` : undefined
 
   /* ---------- render ---------- */
@@ -561,7 +622,13 @@ export default function CommandPalette(): JSX.Element | null {
           <EmptyState
             compact
             illustration="search"
-            title={sub?.error ? t('Couldn’t load the list') : q ? `${t('Nothing matches')} “${q}”` : t('Nothing here yet')}
+            title={
+              sub?.error
+                ? t('Couldn’t load the list')
+                : q
+                  ? `${t('Nothing matches')} “${q.length > 48 ? `${q.slice(0, 46)}…` : q}”`
+                  : t('Nothing here yet')
+            }
             body={sub?.error ? sub.error.slice(0, 160) : index.loading ? t('Still indexing your library…') : t('Try fewer letters, or ask in plain words.')}
             action={
               q && !sub ? (
@@ -587,7 +654,13 @@ export default function CommandPalette(): JSX.Element | null {
         e.type === 'head' ? (
           <div key={`h-${e.group}`} className="lyr-pal-head" role="presentation">
             <span>{t(GROUP_LABEL[e.group] ?? e.group)}</span>
-            {e.count > 1 && <span className="lyr-pal-count tabular">{e.count}</span>}
+            {e.total !== undefined && e.total > e.count ? (
+              <span className="lyr-pal-count tabular">
+                {e.count} {t('of')} {e.total}
+              </span>
+            ) : (
+              e.count > 1 && <span className="lyr-pal-count tabular">{e.count}</span>
+            )}
           </div>
         ) : (
           renderRow(e.row, e.index, { '--i': Math.min(rowN++, 12) } as React.CSSProperties)
@@ -640,10 +713,20 @@ export default function CommandPalette(): JSX.Element | null {
               </button>
             )}
             {!sub && scope && (
-              <span className="lyr-pal-scope" aria-hidden>
+              <button
+                type="button"
+                className="lyr-pal-scope"
+                onClick={() => {
+                  setScopeKey(null)
+                  inputRef.current?.focus()
+                }}
+                title={t('Search everything')}
+                aria-label={`${t(scope.label)}: ${t('Search everything')}`}
+              >
                 <Icon name={scope.icon} size={13} />
                 {t(scope.label)}
-              </span>
+                <Icon name="x" size={11} className="lyr-pal-scope-x" />
+              </button>
             )}
             <input
               ref={inputRef}
@@ -658,7 +741,7 @@ export default function CommandPalette(): JSX.Element | null {
               spellCheck={false}
               placeholder={sub ? t('Filter…') : t('Search clips, pages and actions, or paste a link…')}
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => onQueryChange(e.target.value)}
               onKeyDown={onKeyDown}
             />
             {index.loading && open && (
@@ -690,11 +773,15 @@ export default function CommandPalette(): JSX.Element | null {
             <span>
               <Kbd keys={['↵']} /> {t('open')}
             </span>
-            <span>
-              <Kbd keys={['Ctrl', '↵']} /> {t('keep open')}
-            </span>
-            {wide && (
-              <span>
+            {/* One extra hint fits beside the scope filters: how to bring the
+                preview back when it's off, otherwise Ctrl+Enter. */}
+            {!(wide && !previewOn) && (
+              <span className="lyr-pal-foot-extra">
+                <Kbd keys={['Ctrl', '↵']} /> {t('keep open')}
+              </span>
+            )}
+            {wide && !previewOn && (
+              <span className="lyr-pal-foot-extra">
                 <Kbd keys={['Tab']} /> {t('preview')}
               </span>
             )}
@@ -709,7 +796,7 @@ export default function CommandPalette(): JSX.Element | null {
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => {
                     setSub(null)
-                    setQuery(scopeKey === k ? q : k + q)
+                    setScopeKey(scopeKey === k ? null : k)
                     inputRef.current?.focus()
                   }}
                   title={t(s.label)}
@@ -724,11 +811,19 @@ export default function CommandPalette(): JSX.Element | null {
         {showPreview && (
           <aside className="lyr-pal-preview" aria-live="polite">
             <Preview row={current} />
+            <p className="lyr-pal-preview-tip" aria-hidden>
+              <Kbd keys={['Tab']} /> {t('hides this preview')}
+            </p>
           </aside>
         )}
       </div>
     </Dialog>
   )
+}
+
+const PLATFORM: Record<string, string> = { youtube: 'YouTube', twitch: 'Twitch', kick: 'Kick', tiktok: 'TikTok', instagram: 'Instagram' }
+function platformName(id: string): string {
+  return PLATFORM[id.toLowerCase()] ?? id.charAt(0).toUpperCase() + id.slice(1)
 }
 
 function fmtDur(s: number): string {
@@ -743,7 +838,7 @@ function Preview({ row }: { row: Row | null }): JSX.Element {
   if (!row) {
     return (
       <div className="lyr-prev-idle">
-        <Icon name="command" size={28} />
+        <Icon name="search" size={28} />
         <p>{t('Everything in Solaris Studio, one search away.')}</p>
       </div>
     )
@@ -772,20 +867,24 @@ function Preview({ row }: { row: Row | null }): JSX.Element {
       <div className="lyr-prev" key={row.key}>
         <Avatar seed={it.creatorId ?? it.label} name={it.label} size={72} className="lyr-prev-avatar" />
         <p className="lyr-prev-title">{it.label}</p>
-        {s.accounts.length > 0 && <p className="lyr-prev-sub">{[...new Set(s.accounts)].join(' · ')}</p>}
+        {s.accounts.length > 0 && (
+          <p className="lyr-prev-sub">{[...new Set(s.accounts.map(platformName))].join(' · ')}</p>
+        )}
         <div className="lyr-prev-stats">
           <div>
             <b className="tabular">{s.videos}</b>
-            <span>{t('videos')}</span>
+            <span>{s.videos === 1 ? t('video') : t('videos')}</span>
           </div>
           <div>
             <b className="tabular">{s.clips}</b>
-            <span>{t('clips')}</span>
+            <span>{s.clips === 1 ? t('clip') : t('clips')}</span>
           </div>
-          <div>
-            <b className="tabular">{s.avgScore === null ? '–' : Math.round(s.avgScore)}</b>
-            <span>{t('avg score')}</span>
-          </div>
+          {s.avgScore !== null && (
+            <div>
+              <b className="tabular">{Math.round(s.avgScore)}</b>
+              <span>{t('avg score')}</span>
+            </div>
+          )}
         </div>
         <p className="lyr-prev-hint">
           <Kbd keys={['↵']} /> {t('Open profile')}

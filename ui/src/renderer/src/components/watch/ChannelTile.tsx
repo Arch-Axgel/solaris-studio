@@ -95,26 +95,6 @@ export default function ChannelTile({
       data-on={on ? 'true' : 'false'}
       data-watch={watch.id}
     >
-      <div className="ops-tile-head">
-        <div className="ops-tile-avatar">
-          <Avatar seed={watch.id} name={watch.name || watch.channel_key} size={44} />
-          <span className="ops-tile-platform" title={WATCH_PLATFORM_LABEL[watch.platform] ?? watch.platform}>
-            <Icon name={PLATFORM_ICON[watch.platform] ?? 'link'} size={12} />
-          </span>
-          {stats?.working && <span className="ops-tile-live" aria-label={t('Clipping now')} />}
-        </div>
-        <dl className="ops-tile-counts">
-          {counts.map(([key, n, icon, label]) => (
-            <div key={key} data-k={key}>
-              <dt>
-                <Icon name={icon} size={11} />
-                {label}
-              </dt>
-              <dd className="tabular">{n === undefined ? <span className="skeleton ops-count-skel" /> : n}</dd>
-            </div>
-          ))}
-        </dl>
-      </div>
       <WatchCard
         watch={watch}
         automation={automation}
@@ -123,6 +103,33 @@ export default function ChannelTile({
         onOpenInStudio={onOpenInStudio}
         onOpenCreator={onOpenCreator}
         openSetup={openSetup}
+        lead={
+          <div className="ops-tile-avatar">
+            <Avatar seed={watch.creator?.id ?? watch.id} name={watch.name || watch.channel_key} size={44} />
+            <span
+              className="ops-tile-platform"
+              title={WATCH_PLATFORM_LABEL[watch.platform] ?? watch.platform}
+              aria-label={WATCH_PLATFORM_LABEL[watch.platform] ?? watch.platform}
+              role="img"
+            >
+              <Icon name={PLATFORM_ICON[watch.platform] ?? 'link'} size={12} />
+            </span>
+            {stats?.working && <span className="ops-tile-live" aria-label={t('Clipping now')} role="img" />}
+          </div>
+        }
+        stats={
+          <dl className="ops-tile-counts">
+            {counts.map(([key, n, icon, label]) => (
+              <div key={key} data-k={key}>
+                <dt>
+                  <Icon name={icon} size={11} />
+                  {label}
+                </dt>
+                <dd className="tabular">{n === undefined ? <span className="skeleton ops-count-skel" /> : n}</dd>
+              </div>
+            ))}
+          </dl>
+        }
       />
     </div>
   )

@@ -124,6 +124,7 @@ html[data-density='compact'] .home-grid { gap: 16px }
     0 0 40px -10px rgb(242 122 132 / 0.5);
 }
 .home-quick .home-quick-bar.is-drag { transform: scale(1.01) }
+.home-quick .home-quick-bar.is-drag > :not(.home-quick-drop) { visibility: hidden }
 
 .home-quick-badge {
   width: 48px;
@@ -153,6 +154,7 @@ html[data-density='compact'] .home-grid { gap: 16px }
   letter-spacing: -0.005em;
   padding: 10px 4px;
 }
+.home-quick-input:focus-visible { outline: none }
 .home-quick-input::placeholder { color: color-mix(in srgb, var(--color-muted) 80%, transparent) }
 .home-quick-plat-name {
   font-size: 0.72rem;
@@ -191,7 +193,7 @@ html[data-density='compact'] .home-grid { gap: 16px }
   inset: 6px;
   border-radius: calc(var(--radius-xl) - 6px);
   border: 2px dashed rgb(216 178 99 / 0.6);
-  background: rgb(19 10 13 / 0.86);
+  background: var(--color-abyss);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -258,7 +260,8 @@ html[data-density='compact'] .home-grid { gap: 16px }
   .home-quick-input { font-size: 1rem }
 }
 @container home (max-width: 760px) {
-  .home-quick-options span { display: none }
+  .home-quick-options svg { display: none }
+  .home-quick-options { padding-inline: 10px; border-color: var(--color-hairline) }
   .home-quick-plat-name { display: none }
   .home-quick-go { min-width: 0 }
 }
@@ -298,7 +301,7 @@ html[data-density='compact'] .home-grid { gap: 16px }
 .home-preset-main:hover,
 .home-preset[data-on='true'] .home-preset-main { color: var(--color-gold-strong) }
 .home-preset-main:focus-visible,
-.home-preset-info:focus-visible { outline: 2px solid var(--color-gold); outline-offset: 2px }
+.home-preset-info:focus-visible { outline: 2px solid var(--color-gold); outline-offset: -3px }
 .home-preset-check { color: var(--color-gold-strong) }
 .home-preset-info {
   display: grid;
@@ -319,6 +322,15 @@ html[data-density='compact'] .home-grid { gap: 16px }
    Now processing
    ===================================================================== */
 .home-np { display: flex; align-items: center; gap: 28px; min-height: 220px; padding: 24px }
+/* idle: a compact banner, not a 220px card saying nothing is happening */
+.home-np.home-np-idle { min-height: 0; gap: 20px; padding: 16px 24px 16px 18px }
+.home-np-idle > .min-w-0 { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 20px; align-items: center }
+.home-np-idle > .min-w-0 > :not(div) { grid-column: 1 }
+.home-np-idle > .min-w-0 > div { grid-column: 2; grid-row: 1 / span 3; margin-top: 0 }
+.home-np-idle .home-np-idle-art { width: 76px; height: 76px }
+.home-np-idle .home-np-orbit-2 { inset: 13px }
+.home-np-idle .home-np-core { width: 40px; height: 40px }
+.home-np-idle .home-np-core svg { width: 20px; height: 20px }
 .home-np-ring-wrap { position: relative; display: grid; place-items: center; flex-shrink: 0 }
 .home-np-halo {
   position: absolute;
@@ -417,13 +429,18 @@ html[data-density='compact'] .home-grid { gap: 16px }
 }
 @container home (max-width: 560px) {
   .home-np { flex-direction: column; align-items: flex-start }
+  .home-np-idle > .min-w-0 { display: block }
+  .home-np-idle > .min-w-0 > div { margin-top: 14px }
 }
 
 /* queue mini */
 .home-qmini { display: flex; flex-direction: column; gap: 14px; padding: 20px }
-.home-qmini-rings { display: flex; justify-content: space-around; gap: 8px; flex: 1; align-items: center }
-.home-qmini-item { display: flex; flex-direction: column; align-items: center; gap: 8px; transition: opacity var(--dur-3) }
-.home-qmini-item[data-zero='true'] { opacity: 0.55 }
+.home-qmini-rings { display: flex; justify-content: space-around; gap: 8px; align-items: center; padding-block: 4px }
+.home-qmini-item { display: flex; flex-direction: column; align-items: center; gap: 8px }
+.home-qmini-item > span { color: var(--color-muted) }
+/* a zero dims its ring, never its label (which must stay readable) */
+.home-qmini-item > .ui-ring { transition: opacity var(--dur-3) }
+.home-qmini-item[data-zero='true'] > .ui-ring { opacity: 0.55 }
 .home-qmini-n { font-family: var(--font-cine); font-size: 1.35rem; color: var(--color-ink) }
 
 /* =====================================================================
@@ -504,6 +521,7 @@ html[data-density='compact'] .home-kpis { gap: 16px }
   outline: none;
 }
 .home-strip-empty { grid-column: 1 / -1; width: min(100%, 520px); justify-self: center }
+.home-strip:has(> .home-strip-empty) { display: flex; justify-content: center; overflow: visible; scroll-snap-type: none }
 .home-strip-arrow {
   position: absolute;
   top: calc(50% - 22px);
@@ -772,7 +790,15 @@ html[data-density='compact'] .home-kpis { gap: 16px }
   transition: transform var(--dur-3) var(--ease-spring);
 }
 .home-premiere-stage:hover .home-premiere-play { transform: scale(1.12) }
-.home-premiere-empty { flex-direction: column; justify-content: center; align-items: flex-start; gap: 6px; padding: 24px }
+.home-premiere-empty {
+  min-height: 0;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  padding: 24px;
+}
 .home-premiere-reel {
   width: 56px;
   height: 56px;
@@ -841,6 +867,7 @@ html[data-density='compact'] .home-kpis { gap: 16px }
 .home-quest-opt { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--color-muted); border: 1px solid var(--color-line); border-radius: 4px; padding: 0 4px }
 .home-quest-go {
   flex-basis: 100%;
+  min-height: 28px;
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -1112,12 +1139,14 @@ html[data-density='compact'] .create { gap: 14px; padding: 18px }
   left: 0;
   right: 0;
   height: 5vh;
-  background: #000;
+  /* a soft vignette: solid #000 bars read as a rendering glitch on the
+     warm palette */
+  background: linear-gradient(var(--wiz-bar-dir, 180deg), rgb(12 6 8 / 0.9), transparent);
   pointer-events: none;
   animation: wiz-bar-in var(--dur-5) var(--ease-out-expo) both;
 }
 .wiz-letterbox-top { top: 0; transform-origin: top }
-.wiz-letterbox-bottom { bottom: 0; transform-origin: bottom }
+.wiz-letterbox-bottom { bottom: 0; transform-origin: bottom; --wiz-bar-dir: 0deg }
 @keyframes wiz-bar-in { from { transform: scaleY(0) } to { transform: none } }
 @media (max-height: 719px) {
   .wiz-letterbox { height: 2vh }
@@ -1246,9 +1275,524 @@ html[data-density='compact'] .create { gap: 14px; padding: 18px }
 }
 
 /* AddVideos brings its own .card: inside the Create surface it sits flush. */
-.create-surface-scroll > div > .card {
+.create-surface-scroll > div > .card,
+.create-surface-scroll > div > .card.av {
   background: transparent;
   border-color: transparent;
   box-shadow: none;
   padding: 0;
 }
+
+/* =====================================================================
+   Gaming / Reaction layout editor (GamingLayoutEditor, .gle-)
+   A flex column: header and footer stay in view, only the body scrolls.
+   The body is a container: three columns when wide, the layouts as a strip
+   above the frame and preview when narrower, one column when narrow.
+   ===================================================================== */
+.gle {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 1320px;
+  max-height: 100%;
+  margin: auto;
+  background: var(--color-surface);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--inner-hi), var(--shadow-3), 0 0 90px -30px rgb(143 36 69 / 0.6);
+  overflow: hidden;
+  animation: scale-in var(--dur-3) var(--ease-out-expo) both;
+}
+.gle[data-full] { max-width: none; height: 100%; border: 0; border-radius: 0 }
+
+.gle-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px 12px 18px;
+  border-bottom: 1px solid var(--color-hairline);
+  background: linear-gradient(180deg, rgb(143 36 69 / 0.14), transparent);
+  flex-shrink: 0;
+}
+.gle-head .t-micro { line-height: 1.1 }
+.gle-head-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  color: var(--color-gold-strong);
+  background: radial-gradient(circle at 30% 25%, rgb(216 178 99 / 0.22), rgb(143 36 69 / 0.3));
+  border: 1px solid var(--color-hairline);
+}
+.gle-tools { display: flex; align-items: center; gap: 2px; flex-shrink: 0 }
+.gle-tools-rule { width: 1px; height: 20px; margin-inline: 8px 4px; background: var(--color-line) }
+.gle-grid-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 11px 0 9px;
+  border-radius: var(--radius-md);
+  font-size: 0.8rem;
+  color: var(--color-muted);
+  border: 1px solid var(--color-hairline);
+  transition:
+    color var(--dur-2),
+    background-color var(--dur-2),
+    border-color var(--dur-2);
+}
+.gle-grid-toggle:hover { color: var(--color-ink); border-color: rgb(216 178 99 / 0.4) }
+.gle-grid-toggle[aria-pressed='true'] {
+  color: var(--color-gold-strong);
+  background: var(--tint-gold);
+  border-color: rgb(216 178 99 / 0.55);
+}
+
+.gle-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 16px 18px 20px;
+  container-type: inline-size;
+  container-name: gle;
+}
+.gle-grid {
+  display: grid;
+  grid-template-columns: 228px minmax(0, 1fr) auto;
+  grid-template-areas: 'layouts frame side';
+  gap: 20px;
+  align-items: start;
+}
+.gle-layouts { grid-area: layouts; min-width: 0 }
+.gle-frame { grid-area: frame; display: flex; flex-direction: column; gap: 10px }
+.gle-side { grid-area: side; display: flex; flex-direction: column; gap: 10px; font-size: 0.75rem; min-width: 0 }
+
+.gle-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px }
+.gle-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 4px 5px;
+  border-radius: 12px;
+  color: var(--color-muted);
+  border: 1px solid var(--color-hairline);
+  background: color-mix(in srgb, var(--color-raised) 45%, transparent);
+  scroll-snap-align: start;
+  transition:
+    color var(--dur-2),
+    border-color var(--dur-2),
+    background-color var(--dur-2),
+    box-shadow var(--dur-2),
+    transform var(--dur-2) var(--ease-spring);
+}
+.gle-card:hover { color: var(--color-ink); border-color: rgb(216 178 99 / 0.4); transform: translateY(-1px) }
+.gle-card:active { transform: scale(0.97) }
+.gle-card[aria-checked='true'] {
+  color: var(--color-gold-strong);
+  border-color: rgb(216 178 99 / 0.65);
+  background: linear-gradient(180deg, rgb(216 178 99 / 0.14), rgb(143 36 69 / 0.24));
+  box-shadow: 0 0 0 1px rgb(216 178 99 / 0.2), 0 8px 22px -12px rgb(216 178 99 / 0.75);
+}
+.gle-card-art { display: block; border-radius: 6px; overflow: hidden; box-shadow: 0 0 0 1px rgb(0 0 0 / 0.45) }
+.gle-card-name {
+  width: 100%;
+  min-height: 26px;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  line-height: 13px;
+  text-align: center;
+  font-weight: 500;
+}
+
+.gle-help { display: flex; align-items: flex-start; gap: 8px; font-size: 0.75rem; line-height: 1.5; color: var(--color-muted) }
+.gle-help p { flex: 1; min-width: 0 }
+.gle-help-more {
+  flex-shrink: 0;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  color: var(--color-gold);
+  transition:
+    background-color var(--dur-2),
+    color var(--dur-2);
+}
+.gle-help-more:hover { color: var(--color-gold-strong); background: var(--tint-gold) }
+
+.gle-stage {
+  width: 100%;
+  border-radius: var(--radius-md);
+  background: var(--color-abyss);
+  /* a ring, not a border: the drag maths reads the frame's own rect */
+  box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-2);
+}
+.gle-stage-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  text-align: center;
+}
+.gle-stage-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--color-error);
+  background: var(--tint-error);
+  border: 1px solid rgb(242 122 132 / 0.3);
+}
+
+.gle-moment { display: flex; align-items: center; gap: 12px; font-size: 0.75rem; color: var(--color-muted) }
+.gle-thumbs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px }
+.gle-thumb {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  color: var(--color-line);
+  background: var(--color-abyss);
+  box-shadow: inset 0 0 0 1px var(--color-hairline);
+  transition: transform var(--dur-2) var(--ease-out);
+}
+.gle-thumb::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 2px transparent;
+  transition: box-shadow var(--dur-2);
+}
+.gle-thumb[data-state='loading'] {
+  background: linear-gradient(90deg, var(--color-raised) 25%, color-mix(in srgb, var(--color-raised) 60%, var(--color-velvet)) 37%, var(--color-raised) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+.gle-thumb[data-state='loading'] img { opacity: 0 }
+.gle-thumb img { width: 100%; height: 100%; object-fit: cover; transition: opacity var(--dur-3) }
+.gle-thumb:hover { transform: translateY(-1px) }
+.gle-thumb:hover::after { box-shadow: inset 0 0 0 2px rgb(216 178 99 / 0.45) }
+.gle-thumb[data-on='true']::after { box-shadow: inset 0 0 0 2px var(--color-gold), 0 0 16px -4px rgb(216 178 99 / 0.6) }
+
+.gle-note { display: flex; align-items: flex-start; gap: 7px; font-size: 0.75rem; line-height: 1.5; color: var(--color-gold) }
+.gle-note svg { flex-shrink: 0; margin-top: 2px }
+.gle-note.is-warn { color: var(--color-warn) }
+
+.gle-select.input { width: auto; min-width: 0; height: 30px; min-height: 30px; padding-block: 0; padding-left: 10px; font-size: 0.75rem }
+.gle-preview {
+  align-self: flex-start;
+  border-radius: 14px;
+  box-shadow: 0 0 0 1px var(--color-hairline), var(--shadow-2);
+}
+.gle-face { display: flex; align-items: flex-start; gap: 6px; font-size: 0.75rem; line-height: 1.45; color: var(--color-muted) }
+.gle-face svg { flex-shrink: 0; margin-top: 1px }
+.gle-face[data-tone='ok'] { color: var(--color-gold) }
+.gle-face[data-tone='warn'] { color: var(--color-warn) }
+
+.gle-controls { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--color-hairline) }
+.gle-row { display: flex; align-items: center; gap: 10px }
+.gle-row-label { width: 66px; flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; color: var(--color-muted) }
+.gle-swatch { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0 }
+.gle-seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--color-abyss);
+  border: 1px solid var(--color-hairline);
+}
+.gle-seg button {
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: 7px;
+  font-size: 0.75rem;
+  color: var(--color-muted);
+  transition:
+    color var(--dur-2),
+    background-color var(--dur-2),
+    box-shadow var(--dur-2);
+}
+.gle-seg button:hover { color: var(--color-ink) }
+.gle-seg button[aria-pressed='true'] {
+  font-weight: 600;
+  color: var(--color-gold-strong);
+  background: linear-gradient(180deg, rgb(216 178 99 / 0.12), rgb(143 36 69 / 0.3));
+  box-shadow: inset 0 0 0 1px rgb(216 178 99 / 0.32);
+}
+
+.gle-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--color-hairline);
+  background: rgb(12 6 8 / 0.45);
+  flex-shrink: 0;
+}
+.gle-remember {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  font-size: 0.8rem;
+  color: var(--color-muted);
+  cursor: pointer;
+  transition: color var(--dur-2);
+}
+.gle-remember:hover { color: var(--color-ink) }
+.gle-foot-actions { display: flex; gap: 8px; margin-left: auto }
+
+/* narrower: the layouts become a strip over the frame and the preview */
+@container gle (max-width: 1080px) {
+  .gle-grid {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: 'layouts layouts' 'frame side';
+    gap: 16px 18px;
+  }
+  .gle-cards {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: 76px;
+    overflow-x: auto;
+    padding: 2px 2px 8px;
+    scroll-snap-type: x proximity;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 40px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 40px), transparent);
+  }
+}
+/* narrow: one column, the preview centred under the frame */
+@container gle (max-width: 620px) {
+  .gle-grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'layouts' 'frame' 'side' }
+  .gle-side { justify-self: center }
+}
+@media (max-width: 700px) {
+  .gle-grid-toggle span { display: none }
+  .gle-grid-toggle { padding: 0; width: 32px; justify-content: center }
+}
+
+/* the minimised editor: a bar at the bottom centre */
+.gle-mini {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 8px;
+  border-radius: 14px;
+  font-size: 0.85rem;
+  border: 1px solid var(--color-hairline);
+  background: var(--glass-strong);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--shadow-3), 0 0 40px -16px rgb(216 178 99 / 0.45);
+}
+.gle-mini-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  color: var(--color-gold-strong);
+  background: var(--tint-gold);
+}
+.gle-mini-title {
+  max-width: min(42vw, 360px);
+  padding: 4px 6px;
+  border-radius: 8px;
+  font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  transition: color var(--dur-2);
+}
+.gle-mini-title:hover { color: var(--color-gold-strong) }
+
+/* =====================================================================
+   Generate bar (AddVideos, .av-): shared by the Create page and the
+   Create sheet. One row per video: the link (or file) with its remove
+   button, then a row of uniform switch chips, then any sub-settings.
+   ===================================================================== */
+.av {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.av-slot { display: flex; flex-direction: column; gap: 10px }
+.av-slot + .av-slot { padding-top: 14px; border-top: 1px solid var(--color-hairline) }
+.av-slot-head { display: flex; align-items: center; gap: 10px }
+.av-num {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--color-gold-strong);
+  background: var(--tint-gold);
+  border: 1px solid var(--color-hairline);
+}
+.av-url { position: relative; flex: 1; min-width: 0; display: flex; align-items: center }
+.av-url > svg { position: absolute; left: 14px; color: var(--color-muted); pointer-events: none; transition: color var(--dur-2) }
+.av-url:focus-within > svg { color: var(--color-gold) }
+.av-url .input { width: 100%; height: 44px; padding-left: 40px; font-size: 0.95rem }
+.av-remove { flex-shrink: 0; width: 40px; height: 40px }
+.av-remove:hover:not(:disabled) { color: var(--color-error); background: var(--tint-error) }
+
+.av-toggles { display: flex; flex-wrap: wrap; align-items: center; gap: 8px }
+.av-toggles-rule { width: 1px; height: 20px; margin-inline: 2px; background: var(--color-line) }
+.av-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 13px 0 10px;
+  border-radius: 999px;
+  font-size: 0.84rem;
+  color: var(--color-ink);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  border: 1px solid var(--color-hairline);
+  background: color-mix(in srgb, var(--color-raised) 40%, transparent);
+  transition:
+    border-color var(--dur-2),
+    background-color var(--dur-2),
+    color var(--dur-2),
+    box-shadow var(--dur-2);
+}
+.av-toggle:hover { border-color: rgb(216 178 99 / 0.4); background: var(--tint-accent) }
+.av-toggle:has(input:checked) {
+  border-color: rgb(216 178 99 / 0.55);
+  background: linear-gradient(180deg, rgb(216 178 99 / 0.1), rgb(143 36 69 / 0.24));
+  box-shadow: 0 4px 14px -10px rgb(216 178 99 / 0.8);
+}
+.av-toggle:has(input:focus-visible) { outline: 2px solid var(--color-gold); outline-offset: 2px }
+.av-toggle input[type='checkbox'] { margin: 0; flex-shrink: 0 }
+.av-toggle input[type='checkbox']:focus-visible { outline: none }
+.av-toggle[data-disabled] {
+  cursor: not-allowed;
+  color: var(--color-muted);
+  background: transparent;
+  border-style: dashed;
+  box-shadow: none;
+}
+.av-toggle[data-disabled]:hover { border-color: var(--color-hairline); background: transparent }
+.av-toggle[data-disabled] input { opacity: 0.45 }
+.av-hint { color: var(--color-muted); font-size: 0.78rem }
+.av-style-btn > svg:first-child { color: var(--color-gold) }
+.av-chev { color: var(--color-muted); transition: transform var(--dur-2) var(--ease-out) }
+.av-style-btn[aria-expanded='true'] {
+  color: var(--color-gold-strong);
+  border-color: rgb(216 178 99 / 0.55);
+  background: var(--tint-gold);
+}
+.av-style-btn[aria-expanded='true'] .av-chev { transform: rotate(180deg); color: var(--color-gold-strong) }
+.av-toggle-group { display: inline-flex; align-items: center; gap: 4px }
+.av-setup {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--color-gold);
+  transition:
+    color var(--dur-2),
+    background-color var(--dur-2);
+}
+.av-setup:hover,
+.av-setup[aria-expanded='true'] { color: var(--color-gold-strong); background: var(--tint-gold) }
+
+.av-sub {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-abyss) 55%, transparent);
+  border: 1px solid var(--color-hairline);
+}
+.av-select.input { width: auto; min-width: 16rem; max-width: 100% }
+.av-layout { font-size: 0.8rem }
+.av-style {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 720px;
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-abyss) 55%, transparent);
+  border: 1px solid var(--color-hairline);
+  animation: rise var(--dur-3) var(--ease-out-expo) both;
+}
+.av-error { display: flex; align-items: flex-start; gap: 6px; font-size: 0.82rem; line-height: 1.45; color: var(--color-error) }
+.av-error svg { flex-shrink: 0; margin-top: 2px }
+
+.av-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-hairline);
+}
+.av-foot-hint { display: inline-flex; align-items: center; gap: 6px; font-size: 0.75rem; color: var(--color-muted) }
+.av-creator { display: inline-flex; align-items: center; gap: 8px }
+.av-creator .input { width: 13rem; height: 34px; min-height: 34px; padding-block: 0; font-size: 0.85rem }
+.av-go { min-width: 150px }
+@media (max-width: 860px) {
+  .av-foot-hint,
+  .av-toggles-rule { display: none }
+  .av-select.input { min-width: 0 }
+}
+
+.av-drop {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border-radius: inherit;
+  border: 2px dashed rgb(216 178 99 / 0.6);
+  background: rgb(19 10 13 / 0.94);
+  backdrop-filter: blur(4px);
+  color: var(--color-gold-strong);
+  font-weight: 500;
+  pointer-events: none;
+  animation: fade-in var(--dur-2) var(--ease-out) both;
+}
+.av-added { display: flex; align-items: flex-start; gap: 6px; padding-inline: 4px; font-size: 0.85rem; color: var(--color-gold) }
+.av-added svg { flex-shrink: 0; margin-top: 3px }
+
+/* AddVideos brings its own .card: on the Create page and in the Create
+   sheet (whose surface is already a card) it sits flush, never a card in
+   a card. */
+.lyr-create-surface > div > .card.av {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+/* the Create sheet's preset explainer, as on the Create page */
+.lyr-create-explain { margin-top: -4px; font-size: 0.75rem; line-height: 1.45; color: var(--color-muted) }

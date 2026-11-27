@@ -211,7 +211,7 @@ function ThirdPartyBatchDialog({
       size="md"
       className="lib-dialog"
       title={single ? t('Publish this clip') : `${t('Publish')} ${clips.length} ${t('clips')}`}
-      description={`${t('Each clip is uploaded once and sent to every platform you pick, through your')} ${PROVIDER_LABEL[provider]} ${t('account.')}`}
+      description={`${single ? t('The clip is uploaded once and sent to every platform you pick, through your') : t('Each clip is uploaded once and sent to every platform you pick, through your')} ${PROVIDER_LABEL[provider]} ${t('account.')}`}
       footer={footer}
     >
       <div className="space-y-4">

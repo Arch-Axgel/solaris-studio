@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { AutomationActivity, AutomationStatus, Watch } from '../../lib/types'
 import { t } from '../../lib/i18n'
 import { Icon } from '../icons'
-import { Avatar, Badge, Button, CountUp, IconButton, Popover, ProgressBar, Toggle, Tooltip } from '../ui'
+import { Avatar, Button, CountUp, IconButton, Popover, Skeleton, Toggle, Tooltip } from '../ui'
 
 function hash(s: string): number {
   let h = 2166136261
@@ -38,7 +38,8 @@ export default function RadarHero({
   onDeleteSources,
   onTray,
   onCheckAll,
-  onPick
+  onPick,
+  aside
 }: {
   status: AutomationStatus | null
   watches: Watch[] | null
@@ -54,6 +55,8 @@ export default function RadarHero({
   onTray: (on: boolean) => void
   onCheckAll: () => void
   onPick?: (watchId: number) => void
+  /** A small extra beside "Check all now" (the AI chip). */
+  aside?: React.ReactNode
 }): JSX.Element {
   const [now, setNow] = useState(Date.now() / 1000)
   useEffect(() => {
@@ -64,12 +67,17 @@ export default function RadarHero({
   const on = Boolean(status?.enabled)
   const list = watches ?? []
   const watching = list.filter((w) => w.enabled).length
-  const state = activity?.now.state ?? (on ? 'watching' : 'off')
-  const percent = activity?.now.progress?.percent
+  const loading = status === null
+  const state = loading ? 'loading' : (activity?.now.state ?? (on ? 'watching' : 'off'))
   const next = activity && activity.next_check_at > 0 ? activity.next_check_at - now : null
 
   return (
-    <section className={`card-hero ops-radar-hero ${on ? '' : 'radar-off'}`} aria-label={t('Watching')} data-state={state}>
+    <section
+      className={`card-hero ops-radar-hero ${on || loading ? '' : 'radar-off'}`}
+      aria-label={t('Watching')}
+      aria-busy={loading || undefined}
+      data-state={state}
+    >
       <div className="ops-radar" aria-hidden={list.length === 0}>
         <div className="ops-radar-rings" aria-hidden>
           <span />
@@ -100,7 +108,7 @@ export default function RadarHero({
                 }
                 onClick={() => onPick?.(w.id)}
               >
-                <Avatar seed={w.id} name={w.name || w.channel_key} size={22} />
+                <Avatar seed={w.creator?.id ?? w.id} name={w.name || w.channel_key} size={22} />
               </button>
             </Tooltip>
           )
@@ -113,6 +121,16 @@ export default function RadarHero({
       <div className="min-w-0 flex-1 space-y-3">
         <div className="flex items-start gap-4 flex-wrap">
           <div className="min-w-0 flex-1">
+            {/* Until the engine says, nothing is claimed: no "Off", no zeros. */}
+            {loading ? (
+              <div className="ops-radar-skel" aria-hidden>
+                <Skeleton w={52} h={28} radius={999} />
+                <div className="flex-1 space-y-2">
+                  <Skeleton w={140} h={16} />
+                  <Skeleton h={12} className="max-w-md" />
+                </div>
+              </div>
+            ) : (
             <Toggle
               size="lg"
               checked={on}
@@ -125,6 +143,7 @@ export default function RadarHero({
                   : t('Off. Nothing is checked, queued or published until you switch it on.')
               }
             />
+            )}
           </div>
           <Popover
             align="end"
@@ -176,25 +195,20 @@ export default function RadarHero({
         <div className="ops-radar-stats">
           <div>
             <p className="t-micro text-muted">{t('Channels')}</p>
-            <p className="t-kpi">
-              <CountUp value={list.length} />
-            </p>
+            <div className="t-kpi">{loading || watches === null ? <Skeleton w={28} h={26} className="ops-kpi-skel" /> : <CountUp value={list.length} />}</div>
           </div>
           <div>
             <p className="t-micro text-muted">{t('Watching')}</p>
-            <p className="t-kpi text-foil">
-              <CountUp value={on ? watching : 0} />
-            </p>
+            <div className="t-kpi text-foil">
+              {loading || watches === null ? <Skeleton w={28} h={26} className="ops-kpi-skel" /> : <CountUp value={on ? watching : 0} />}
+            </div>
           </div>
-          <div className="min-w-0 flex-1">
-            <p className="t-micro text-muted">{state === 'busy' ? t('Clipping') : t('Next check')}</p>
-            {state === 'busy' && percent != null ? (
-              <div className="pt-2 space-y-1">
-                <ProgressBar value={percent / 100} label={t('Clipping progress')} tone="gold" striped size="sm" />
-                <p className="text-xs text-muted truncate">
-                  {percent}% · {activity?.now.progress?.label}
-                </p>
-              </div>
+          {/* What is being clipped right now, and how far along, is the
+              on-air strip's job just below; the radar keeps to the schedule. */}
+          <div className="min-w-0">
+            <p className="t-micro text-muted">{t('Next check')}</p>
+            {loading ? (
+              <div className="t-kpi"><Skeleton w={64} h={26} className="ops-kpi-skel" /></div>
             ) : (
               <p className="t-kpi tabular">
                 {on && next !== null ? (
@@ -211,16 +225,7 @@ export default function RadarHero({
           </div>
         </div>
 
-        {activity && (
-          <p className="ops-radar-now">
-            <Badge tone={state === 'off' ? 'muted' : state === 'busy' ? 'gold' : state === 'waiting' ? 'warn' : 'success'} size="xs">
-              {state === 'off' ? t('Off') : state === 'busy' ? t('Busy') : state === 'waiting' ? t('Waiting') : t('Watching')}
-            </Badge>
-            <span className="truncate">{activity.now.text}</span>
-          </p>
-        )}
-
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-3 flex-wrap">
           <Button
             variant="subtle"
             icon="refresh"
@@ -231,7 +236,9 @@ export default function RadarHero({
           >
             {checking ? t('Checking…') : t('Check all now')}
           </Button>
+          {aside && <span className="ops-radar-aside">{aside}</span>}
         </div>
+
       </div>
     </section>
   )

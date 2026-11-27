@@ -5,6 +5,7 @@ import { platformLabel, WOOPSOCIAL_PLATFORMS } from '../../lib/uploadpost'
 import { t } from '../../lib/i18n'
 import WatchPlatformOptions, { type PlatformOverrides } from './WatchPlatformOptions'
 import WatchSchedule, { type ScheduleValue } from './WatchSchedule'
+import { Button, Callout } from '../ui'
 
 /** Whether WoopSocial can publish, and which accounts it has. Null while
  *  loading. Shared by the add form and each channel's settings, so both offer
@@ -140,13 +141,12 @@ export default function WatchPublishSettings({
     <div className="mt-3 pt-3 border-t border-line/60 space-y-4">
       <div className="space-y-2">
         <p className="label">{t('When the clips are made')}</p>
-        <div className="flex gap-x-5 gap-y-2 flex-wrap">
+        <div className="ops-ticks">
           {MODES.map((m) => (
-            <label key={m.id} className="flex items-center gap-2 cursor-pointer text-sm" title={t(m.hint)}>
+            <label key={m.id} className="ops-tick" title={t(m.hint)}>
               <input
                 type="radio"
                 name={`publish-mode-${watch.id}`}
-                className="size-4 accent-accent-strong"
                 checked={mode === m.id}
                 onChange={() => setMode(m.id)}
               />
@@ -160,15 +160,19 @@ export default function WatchPublishSettings({
       {mode !== 'off' && (
         <>
           {woop && !woop.ready ? (
-            <div className="text-sm text-warn flex items-center gap-3 flex-wrap">
+            <Callout tone="warn">
               {t('Publishing goes through WoopSocial, which is not set up yet.')}
-              <button
-                className="btn-ghost !px-2 !py-1 text-xs"
-                onClick={() => window.dispatchEvent(new CustomEvent('open-settings', { detail: { section: 'publishing' } }))}
-              >
-                {t('Open Settings')}
-              </button>
-            </div>
+              <span className="block mt-2">
+                <Button
+                  size="sm"
+                  variant="subtle"
+                  icon="gear"
+                  onClick={() => window.dispatchEvent(new CustomEvent('open-settings', { detail: { section: 'publishing' } }))}
+                >
+                  {t('Open Settings')}
+                </Button>
+              </span>
+            </Callout>
           ) : (
             <div className="space-y-2">
               <p className="label">{t('Publish to')}</p>
@@ -179,12 +183,11 @@ export default function WatchPublishSettings({
                   {t('No accounts are connected to WoopSocial yet. Connect them in Settings.')}
                 </p>
               ) : (
-                <div className="flex gap-x-5 gap-y-2 flex-wrap">
+                <div className="ops-ticks">
                   {offered.map((id) => (
-                    <label key={id} className="flex items-center gap-2 cursor-pointer text-sm">
+                    <label key={id} className="ops-tick">
                       <input
                         type="checkbox"
-                        className="size-4 accent-accent-strong"
                         checked={platforms.includes(id)}
                         onChange={(e) =>
                           setPlatforms((prev) =>
@@ -218,10 +221,9 @@ export default function WatchPublishSettings({
               placeholder="#creatorname #twitch"
               onChange={(e) => setHashtags(e.target.value)}
             />
-            <label className="flex items-center gap-2 cursor-pointer text-sm">
+            <label className="ops-tick pt-1">
               <input
                 type="checkbox"
-                className="size-4 accent-accent-strong"
                 checked={!aiHashtags}
                 onChange={(e) => setAiHashtags(!e.target.checked)}
               />
@@ -250,13 +252,13 @@ export default function WatchPublishSettings({
         </>
       )}
 
-      <div className="flex gap-x-6 gap-y-3 flex-wrap items-end">
-        <label className="text-sm space-y-1">
+      <div className="ops-fields">
+        <label className="ops-field ops-field-wide">
           <span className="label block">
             {t('If several videos were posted while Solaris Studio was not watching, clip')}
           </span>
           <select
-            className="input !w-72"
+            className="input"
             value={backlog}
             onChange={(e) => setBacklog(e.target.value as Watch['backlog'])}
           >
@@ -267,13 +269,14 @@ export default function WatchPublishSettings({
             ))}
           </select>
         </label>
-        <label className="text-sm space-y-1">
+        <label className="ops-field">
           <span className="label block">{t('Skip videos shorter than (minutes)')}</span>
           <input
             type="number"
             min={0}
             max={600}
-            className="input !w-24"
+            className="input"
+
             value={minMinutes}
             onChange={(e) => setMinMinutes(Math.max(0, Number(e.target.value) || 0))}
           />

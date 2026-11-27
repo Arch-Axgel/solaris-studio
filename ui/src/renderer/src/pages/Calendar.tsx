@@ -28,7 +28,10 @@ import ScheduleView from '../components/ScheduleView'
 
 type View = 'week' | 'month'
 
-const HOUR_START = 6
+// The whole day: free slots and posts land at any hour (a 23:45 slot is
+// followed by 00:45, 01:45…), and clamping them to a 06:00 start stacked
+// every early-morning post on top of each other at the grid's top edge.
+const HOUR_START = 0
 const HOUR_END = 24
 const HOUR_PX = 52
 
@@ -53,7 +56,18 @@ function platformName(p: string): string {
   return p === 'clip' ? t('Clip Editor') : platformLabel(p)
 }
 
-const timeFmt = (d: Date): string => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+// One clock for the whole page, the user's locale's (Intl, no locale given):
+// the hour axis and the event pills read 9 AM / 9:30 AM, or 09:00 / 09:30.
+const TIME_FMT = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })
+const TWELVE_HOUR = ((): boolean => {
+  const o = TIME_FMT.resolvedOptions()
+  return o.hour12 ?? (o.hourCycle === 'h11' || o.hourCycle === 'h12')
+})()
+// On the axis a 12-hour clock drops the ":00" ("9 AM"); a 24-hour one keeps
+// it, since a bare "09" doesn't read as a time.
+const AXIS_FMT = TWELVE_HOUR ? new Intl.DateTimeFormat(undefined, { hour: 'numeric' }) : TIME_FMT
+const timeFmt = (d: Date): string => TIME_FMT.format(d)
+const axisHour = (h: number): string => AXIS_FMT.format(new Date(2000, 0, 1, h))
 const dayFmt = (d: Date): string => d.toLocaleDateString([], { weekday: 'short' })
 const longDay = (d: Date): string => d.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })
 
@@ -137,13 +151,33 @@ function Chip({
   )
 }
 
-function SlotGhost({ when, style, onClick }: { when: Date; style?: React.CSSProperties; onClick: () => void }): JSX.Element {
+function SlotGhost({
+  when,
+  style,
+  short,
+  onClick
+}: {
+  when: Date
+  style?: React.CSSProperties
+  /** Too little height for two lines: show the time only. */
+  short?: boolean
+  onClick: () => void
+}): JSX.Element {
   return (
-    <button type="button" className="sys-cal-ghost" style={style} onClick={onClick} title={t('A free posting slot. Schedule a clip from the Clip Editor.')}>
-      <Icon name="plus" size={12} />
-      <span className="truncate">
-        {t('Free slot')} · <span className="tabular">{timeFmt(when)}</span>
+    <button
+      type="button"
+      className="sys-cal-ghost"
+      data-short={short || undefined}
+      style={style}
+      onClick={onClick}
+      title={`${t('Free slot')} · ${timeFmt(when)}. ${t('A free posting slot. Schedule a clip from the Clip Editor.')}`}
+      aria-label={`${t('Free slot')} · ${timeFmt(when)}`}
+    >
+      <span className="sys-cal-ghost-time tabular">
+        <Icon name="plus" size={11} />
+        {timeFmt(when)}
       </span>
+      {!short && <span className="sys-cal-ghost-label">{t('Free slot')}</span>}
     </button>
   )
 }
@@ -183,13 +217,22 @@ function WeekView({
     const el = scroller.current
     if (!el) return
     const h = Math.max(HOUR_START, Math.min(HOUR_END - 3, today.getHours() - 1))
-    el.scrollTo({ top: (h - HOUR_START) * HOUR_PX, behavior: 'auto' })
+    // A little above the hour line, so its label is not cut by the top edge.
+    el.scrollTo({ top: Math.max(0, (h - HOUR_START) * HOUR_PX - 10), behavior: 'auto' })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dayKey(start)])
 
   const top = (d: Date): number => {
     const h = d.getHours() + d.getMinutes() / 60
     return Math.max(0, (h - HOUR_START) * HOUR_PX)
+  }
+  const gridH = hours.length * HOUR_PX
+  // A ghost is an hour tall, less a gap, but never hangs past midnight: a
+  // 23:45 slot gets the room left in the day and moves up if that is too short.
+  const ghostBox = (d: Date): { top: number; height: number } => {
+    const y = top(d)
+    const height = Math.max(22, Math.min(HOUR_PX - 8, gridH - y - 3))
+    return { top: Math.min(y, gridH - height - 3), height }
   }
 
   return (
@@ -209,11 +252,11 @@ function WeekView({
         })}
       </div>
       <div className="sys-cal-week-body" ref={scroller}>
-        <div className="sys-cal-week-grid" style={{ height: hours.length * HOUR_PX }}>
+        <div className="sys-cal-week-grid" style={{ height: gridH }}>
           <div className="sys-cal-hours" aria-hidden>
             {hours.map((h) => (
               <span key={h} style={{ top: (h - HOUR_START) * HOUR_PX }}>
-                {String(h).padStart(2, '0')}:00
+                {axisHour(h)}
               </span>
             ))}
           </div>
@@ -234,9 +277,10 @@ function WeekView({
                 {hours.map((h) => (
                   <span key={h} className="sys-cal-line" style={{ top: (h - HOUR_START) * HOUR_PX }} aria-hidden />
                 ))}
-                {slots.map((s) => (
-                  <SlotGhost key={s.toISOString()} when={s} onClick={onSlot} style={{ top: top(s), height: HOUR_PX - 8 }} />
-                ))}
+                {slots.map((s) => {
+                  const box = ghostBox(s)
+                  return <SlotGhost key={s.toISOString()} when={s} onClick={onSlot} short={box.height < 34} style={box} />
+                })}
                 {evs.map((e, i) => (
                   <Chip
                     key={e.id}
@@ -252,7 +296,7 @@ function WeekView({
                     }}
                   />
                 ))}
-                {isToday && today.getHours() >= HOUR_START && (
+                {isToday && (
                   <span className="sys-cal-now" style={{ top: top(today) }} aria-label={t('Now')}>
                     <span className="sys-cal-now-dot" />
                   </span>
@@ -313,7 +357,9 @@ function MonthView({
             <button type="button" className="sys-cal-cell-num tabular" onClick={() => onDay(d)} aria-label={longDay(d)}>
               {d.getDate()}
             </button>
-            {slotDays.has(dayKey(d)) && <span className="sys-cal-slotdot" title={t('Free slot')} aria-label={t('Free slot')} />}
+            {slotDays.has(dayKey(d)) && (
+              <span className="sys-cal-slotdot" title={t('Free slot')} aria-label={t('Free slot')} role="img" />
+            )}
             <div className="sys-cal-cell-list">
               {evs.slice(0, 3).map((e) => (
                 <Chip key={e.id} ev={e} compact onOpen={onOpen} />
@@ -427,10 +473,14 @@ export default function Calendar({
     { label: t('Failed'), value: failed.length, icon: 'alert' as IconName, tone: failed.length ? 'error' : undefined }
   ]
   const noProvider = data && !data.providers.woop && !data.providers.youtube && !data.providers.uploadPost
+  // Publishing happens per clip in the Clip Editor (there is no engine call
+  // that publishes "everything" from here), so the page says where it goes
+  // instead of promising an action it can't perform.
   const goPublish = (): void => navigate({ page: 'studio' })
+  const showEmpty = Boolean(noProvider && events.length === 0)
 
   return (
-    <div className="sys-page sys-cal max-w-[1500px] mx-auto p-6 space-y-5">
+    <div className="sys-page sys-cal max-w-[1200px] mx-auto p-6 space-y-5">
       <PageHeader
         eyebrow={t('MAKE')}
         title={t('Schedule')}
@@ -442,9 +492,11 @@ export default function Calendar({
             <Button variant="ghost" icon="list" onClick={() => setFull(true)}>
               {t('Open full schedule')}
             </Button>
-            <Button variant="gold" icon="send" onClick={goPublish}>
-              {t('Publish all')}
-            </Button>
+            {!showEmpty && (
+              <Button variant="subtle" icon="scissors" onClick={goPublish} title={t('Schedule and publish clips from the Clip Editor.')}>
+                {t('Open Clip Editor')}
+              </Button>
+            )}
           </>
         }
       />
@@ -459,7 +511,7 @@ export default function Calendar({
         ))}
       </div>
 
-      {noProvider && events.length === 0 ? (
+      {showEmpty ? (
         <Card variant="glass">
           <EmptyState
             illustration="calendar"
@@ -494,7 +546,7 @@ export default function Calendar({
               <div className="flex items-center gap-3">
                 {loading && <Icon name="refresh" size={14} className="anim-spin text-muted" />}
                 <span className="sys-cal-legend" aria-hidden>
-                  <span className="sys-cal-legend-ghost" /> {t('Free slot')}
+                  <span className={view === 'month' ? 'sys-cal-legend-dot' : 'sys-cal-legend-ghost'} /> {t('Free slot')}
                 </span>
                 <Segmented
                   ariaLabel={t('Calendar view')}
@@ -583,7 +635,13 @@ export default function Calendar({
                 <h3 className="t-micro mb-3">{t('Next free slots')}</h3>
                 <div className="flex flex-wrap gap-1.5">
                   {data!.slots.slice(0, 6).map((s) => (
-                    <button key={s.toISOString()} type="button" className="sys-cal-slotpill" onClick={goPublish}>
+                    <button
+                      key={s.toISOString()}
+                      type="button"
+                      className="sys-cal-slotpill"
+                      onClick={goPublish}
+                      title={t('A free posting slot. Schedule a clip from the Clip Editor.')}
+                    >
                       <Icon name="clock" size={12} />
                       <span className="tabular">
                         {s.toLocaleDateString([], { weekday: 'short' })} {timeFmt(s)}

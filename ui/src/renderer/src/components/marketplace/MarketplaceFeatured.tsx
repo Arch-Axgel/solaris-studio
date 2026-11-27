@@ -31,7 +31,9 @@ export default function MarketplaceFeatured({ onBrowse }: { onBrowse: () => void
       .marketplace({ kind: 'pipeline' })
       .then((r) => {
         if (!live) return
-        setItems(r.plugins.filter((p) => p.details?.tier === 'listed-official').slice(0, 3))
+        const featured = r.plugins.filter((p) => p.details?.tier === 'listed-official').slice(0, 3)
+        // A row that would only repeat every listing in the grid right below it adds nothing.
+        setItems(featured.length >= r.plugins.length ? [] : featured)
       })
       .catch(() => live && setItems([]))
     return () => {
@@ -86,7 +88,7 @@ export default function MarketplaceFeatured({ onBrowse }: { onBrowse: () => void
           <h3 className="relative t-lg text-ink mt-3">{l.name}</h3>
           {l.description && <p className="relative text-sm text-ink/80 mt-1.5 line-clamp-3">{l.description}</p>}
           <button type="button" className="market-feature-cta nudge" onClick={() => find(l.name)}>
-            {t('Find it in Browse')}
+            {t('Find it below')}
             <Icon name="arrow-right" size={14} />
           </button>
         </article>

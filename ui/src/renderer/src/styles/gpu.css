@@ -3,11 +3,21 @@
    transition is dropped under reduced motion. */
 
 .gpu-card { display: flex; flex-direction: column; gap: 12px }
+/* the section header's own bottom margin would double the card gap */
+.gpu-card > .gpu-card-head { margin-bottom: 0 }
 
 .gpu-card-line {
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   color: var(--color-muted);
   overflow-wrap: anywhere;
+}
+
+/* In Settings the card sits under the "Advanced" section heading: give it the
+   1rem card-title size every other Settings card uses. */
+.sys-settings .gpu-card-head h2 {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  line-height: 1.5rem;
 }
 
 .gpu-layers {
@@ -21,6 +31,7 @@
 }
 .gpu-layer { display: contents }
 .gpu-layer-name { font-weight: 600; font-size: 0.875rem }
+.gpu-layers { padding: 10px 12px; border-radius: var(--radius-md); background: var(--color-abyss); border: 1px solid var(--color-hairline) }
 .gpu-layer-reason {
   font-size: 0.8125rem;
   color: var(--color-muted);

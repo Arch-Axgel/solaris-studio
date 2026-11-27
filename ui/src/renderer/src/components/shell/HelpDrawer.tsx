@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { GLOSSARY, helpFor } from '../../lib/help'
 import { t } from '../../lib/i18n'
 import { PAGES, navigate, openAssistant, openFeedback, openLayer, pageMeta, useLayer, useRoute, type Page } from '../../lib/nav'
@@ -14,6 +14,19 @@ export default function HelpDrawer(): JSX.Element | null {
   const route = useRoute()
   const [page, setPage] = useState<Page>(route.page)
   const [filter, setFilter] = useState('')
+  const bodyRef = useRef<HTMLDivElement>(null)
+
+  // The dialog would focus the first control, the page picker in the header,
+  // and draw its ring on open. Start on the content instead (no ring on a
+  // programmatic focus); Tab still reaches the picker.
+  useEffect(() => {
+    if (!open) return
+    const id = setTimeout(() => {
+      const el = bodyRef.current
+      if (el && document.activeElement?.closest('.lyr-help-pick')) el.focus({ preventScroll: true })
+    }, 30)
+    return () => clearTimeout(id)
+  }, [open])
 
   useEffect(() => {
     if (!open) return
@@ -52,7 +65,7 @@ export default function HelpDrawer(): JSX.Element | null {
           <span className="lyr-help-mark" aria-hidden>
             <Icon name="help" size={18} />
           </span>
-          <div className="min-w-0 flex-1">
+          <div className="lyr-help-for min-w-0 flex-1">
             <p className="t-micro text-muted">{t('Help for')}</p>
             <label className="lyr-help-pick">
               <span className="sr-only">{t('Choose a page')}</span>
@@ -69,14 +82,15 @@ export default function HelpDrawer(): JSX.Element | null {
         </div>
       }
     >
-      <div className="lyr-help" key={page}>
-        <section className="lyr-help-hero anim-rise">
+      <div className="lyr-help" key={page} ref={bodyRef} tabIndex={-1}>
+        {/* The page name is already the header's picker; the hero just says
+            what the page is for. */}
+        <section className="lyr-help-hero anim-rise" aria-label={t(meta.label)}>
           <span className="lyr-help-glyph" aria-hidden>
-            <Icon name={meta.icon} size={26} />
+            <Icon name={meta.icon} size={24} />
           </span>
-          <div className="min-w-0">
-            <h3 className="t-md text-ink">{t(meta.label)}</h3>
-            <p className="text-sm text-muted leading-relaxed">{t(help.purpose)}</p>
+          <div className="min-w-0 self-center">
+            <p className="text-sm text-ink leading-relaxed">{t(help.purpose)}</p>
             {page !== route.page && (
               <button
                 type="button"

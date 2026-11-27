@@ -91,15 +91,15 @@ export default function Home({ active = true }: { active?: boolean } = {}): JSX.
       <PageHeader
         eyebrow={t('MAKE')}
         title={greeting()}
+        icon="home"
         subtitle={<span className="home-status">{status}</span>}
         vtName="page-title"
         actions={
           <>
+            {/* The paste bar below is Home's call to action (and the rail's
+                orb opens every option), so the header keeps to the queue. */}
             <Button variant="ghost" icon="layers" onClick={() => navigate({ page: 'queue' })}>
               {t('Queue')}
-            </Button>
-            <Button variant="accent" icon="plus" onClick={(e) => openCreate({ originRect: e.currentTarget.getBoundingClientRect() })}>
-              {t('New clips')}
             </Button>
           </>
         }

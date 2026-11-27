@@ -5,6 +5,9 @@ import { platformLabel } from '../../lib/uploadpost'
 import QueueItemSettings from '../queue/QueueItemSettings'
 import WatchPublishSettings from './WatchPublishSettings'
 import { t } from '../../lib/i18n'
+import { motionReduced } from '../../lib/motion'
+import { Icon } from '../icons'
+import { Button, Callout, IconButton, Skeleton, Toggle, useConfirm } from '../ui'
 
 export const WATCH_PLATFORM_LABEL: Record<string, string> = {
   youtube: 'YouTube',
@@ -13,7 +16,7 @@ export const WATCH_PLATFORM_LABEL: Record<string, string> = {
 }
 
 /** How many videos the history shows before "show more". */
-const SHOWN = 8
+const SHOWN = 3
 
 /** "14:30", or "Thu 14:30" when it is not in the next day. */
 function clockTime(seconds: number): string {
@@ -62,13 +65,16 @@ function CreatorLine({
       : t('Learns about them from every video it clips.')
   return (
     <div className="ops-wc-creator">
-      <span className="text-muted">{t('Creator profile')}:</span>
-      <span className="font-semibold">{creator.name}</span>
-      <span className="text-muted">· {learned}</span>
+      <Icon name="users" size={14} className="text-gold shrink-0" />
+      <span className="min-w-0 flex-1">
+        <span className="text-muted">{t('Creator profile')}:</span>{' '}
+        <span className="font-semibold text-ink">{creator.name}</span>{' '}
+        <span className="text-muted">· {learned}</span>
+      </span>
       {onOpen && (
-        <button className="btn-ghost !px-2 !py-1 text-xs ml-auto" onClick={() => onOpen(creator.id)}>
-          {t('Open in Creators')} →
-        </button>
+        <Button size="sm" variant="subtle" iconRight="arrow-right" className="shrink-0" onClick={() => onOpen(creator.id)}>
+          {t('Open in Creators')}
+        </Button>
       )}
     </div>
   )
@@ -86,7 +92,9 @@ export default function WatchCard({
   onChanged,
   onOpenInStudio,
   onOpenCreator,
-  openSetup = false
+  openSetup = false,
+  lead,
+  stats
 }: {
   watch: Watch
   automation: AutomationStatus
@@ -98,17 +106,21 @@ export default function WatchCard({
   /** Just added: open everything so it is set up before the first new video.
    *  A new channel only records what is already there, so there is time. */
   openSetup?: boolean
+  /** Shown before the name (the tile's avatar). */
+  lead?: React.ReactNode
+  /** Shown under the name row (the tile's counts). */
+  stats?: React.ReactNode
 }): JSX.Element {
+  const ask = useConfirm()
   const [items, setItems] = useState<WatchItem[] | null>(null)
   const [openClips, setOpenClips] = useState(openSetup)
   const [openPublish, setOpenPublish] = useState(openSetup)
   const cardRef = useRef<HTMLElement>(null)
   useEffect(() => {
-    if (openSetup) cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    if (openSetup) cardRef.current?.scrollIntoView({ behavior: motionReduced() ? 'auto' : 'smooth', block: 'start' })
   }, [openSetup])
   const [showAll, setShowAll] = useState(false)
   const [showEarlier, setShowEarlier] = useState(false)
-  const [confirmRemove, setConfirmRemove] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -138,6 +150,21 @@ export default function WatchCard({
     }
   }
 
+  const remove = async (): Promise<void> => {
+    const ok = await ask({
+      title: t('Stop watching?'),
+      body: (
+        <div className="space-y-2">
+          <p className="font-medium text-ink">{watch.name || watch.channel_key}</p>
+          <p>{t('New videos from this channel won’t be clipped any more. Clips it already made stay in your library.')}</p>
+        </div>
+      ),
+      confirmLabel: t('Remove'),
+      tone: 'danger'
+    })
+    if (ok) void act(() => api.deleteWatch(watch.id))
+  }
+
   const now = Date.now() / 1000
   const status = !automation.enabled
     ? t('Watching is switched off.')
@@ -151,16 +178,19 @@ export default function WatchCard({
   const visible = (items ?? []).filter((i) => showEarlier || i.status !== 'earlier')
   const earlier = (items ?? []).filter((i) => i.status === 'earlier').length
   const shown = showAll ? visible : visible.slice(0, SHOWN)
+  const name = watch.name || watch.channel_key
+  const platform = WATCH_PLATFORM_LABEL[watch.platform] ?? watch.platform
 
   return (
-    <section ref={cardRef} className="ops-wc space-y-3" aria-label={watch.name}>
-      <div className="flex items-start gap-3 flex-wrap">
-        <span className="ops-wc-platform">
-          {WATCH_PLATFORM_LABEL[watch.platform] ?? watch.platform}
-        </span>
-        <div className="min-w-0">
-          <h3 className="font-semibold text-ink truncate flex items-center gap-2">
-            {watch.name || watch.channel_key}
+    <section ref={cardRef} className="ops-wc" aria-label={watch.name}>
+      <div className="ops-wc-head">
+        {lead}
+        <div className="ops-wc-id">
+          <h3 className="ops-wc-name">
+            <span className="truncate min-w-0" title={name}>
+              {name}
+            </span>
+            <span className="sr-only"> ({platform})</span>
             {automation.enabled && watch.enabled && (
               <span className="ops-wc-watching">
                 <span className="size-1.5 rounded-full bg-success animate-pulse" aria-hidden />
@@ -168,153 +198,181 @@ export default function WatchCard({
               </span>
             )}
           </h3>
-          <p className="text-xs text-muted">{status}</p>
+          <p className="text-xs text-muted truncate" title={status}>
+            {status}
+          </p>
         </div>
-        <div className="ml-auto flex items-center gap-2 flex-wrap">
-          <label className="ops-wc-switch" title={t('Watch this channel')}>
-            <input
-              type="checkbox"
-              className="size-4 accent-accent-strong"
+        <div className="ops-wc-actions">
+          <span className="ops-wc-switch" title={t('Watch this channel')}>
+            <Toggle
+              hideLabel
+              label={t('Watch this channel')}
               checked={watch.enabled}
               disabled={busy}
-              onChange={(e) => void act(() => api.patchWatch(watch.id, { enabled: e.target.checked }))}
+              onChange={(on) => void act(() => api.patchWatch(watch.id, { enabled: on }))}
             />
-            {watch.enabled ? t('On') : t('Off')}
-          </label>
-          <button
-            className="btn-ghost !px-2 !py-1 text-xs"
+            <span aria-hidden className={watch.enabled ? 'text-ink' : 'text-muted'}>
+              {watch.enabled ? t('On') : t('Off')}
+            </span>
+          </span>
+          <Button
+            size="sm"
+            variant="subtle"
+            icon="refresh"
             disabled={busy || !watch.enabled || !automation.enabled}
             onClick={() => void act(() => api.checkWatch(watch.id))}
           >
             {t('Check now')}
-          </button>
-          {confirmRemove ? (
-            <span className="flex items-center gap-1.5">
-              <span className="text-xs text-muted">{t('Stop watching?')}</span>
-              <button
-                className="btn-ghost !px-2 !py-1 text-xs !text-error hover:!border-error/50"
-                disabled={busy}
-                onClick={() => void act(() => api.deleteWatch(watch.id))}
-              >
-                {t('Remove')}
-              </button>
-              <button className="btn-ghost !px-2 !py-1 text-xs" onClick={() => setConfirmRemove(false)}>
-                {t('Cancel')}
-              </button>
-            </span>
-          ) : (
-            <button className="btn-ghost !px-2 !py-1 text-xs" onClick={() => setConfirmRemove(true)}>
-              {t('Remove')}
-            </button>
-          )}
+          </Button>
+          <IconButton size="sm" icon="trash" tone="error" label={t('Remove')} disabled={busy} onClick={() => void remove()} />
         </div>
       </div>
 
-      {watch.last_error && (
-        <p className="text-sm text-error">
-          {t('Could not check this channel:')} {watch.last_error}
-          {watch.platform === 'kick' &&
-            ` ${t('Kick has no official way to list videos, so this can stop working without notice.')}`}
-        </p>
-      )}
+      {stats}
 
-      {watch.creator && <CreatorLine creator={watch.creator} onOpen={onOpenCreator} />}
-
-      {openSetup && (
-        <p className="ops-wc-setup">
-          {t('Set it up now. Nothing is clipped until the channel posts something new.')}
-        </p>
-      )}
-      <div className="ops-wc-tabs">
-        <button
-          className="btn-ghost !px-2 !py-1 text-xs"
-          aria-expanded={openClips}
-          onClick={() => setOpenClips(!openClips)}
-        >
-          {t('Clip settings')} {openClips ? '▾' : '▸'}
-        </button>
-        <button
-          className="btn-ghost !px-2 !py-1 text-xs"
-          aria-expanded={openPublish}
-          onClick={() => setOpenPublish(!openPublish)}
-        >
-          {t('Publishing')}: {t(publishModeLabel(watch.publish.mode))}{' '}
-          {openPublish ? '▾' : '▸'}
-        </button>
-      </div>
-
-      {openClips && (
-        <div className="space-y-2">
-          <label className="text-sm flex items-center gap-3 flex-wrap mt-3">
-            <span className="label">{t('Preset')}</span>
-            <select
-              className="input !w-56"
-              value={watch.preset}
-              disabled={busy}
-              onChange={(e) => void act(() => api.patchWatch(watch.id, { preset: e.target.value }))}
-            >
-              {automation.presets.map((p) => (
-                <option key={p.id} value={p.id} title={p.description}>
-                  {t(p.name)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <QueueItemSettings
-            key={`watch-${watch.id}`}
-            job={{ id: watch.id, settings: watch.options }}
-            heading="Settings for every video from this channel"
-            autoSave
-            save={(patch) => api.patchWatch(watch.id, { options: patch })}
-            onSaved={onChanged}
-            channel={{
-              mode: watch.publish.mode,
-              max_posts: watch.publish.max_posts,
-              presetLongform: Boolean(automation.presets.find((p) => p.id === watch.preset)?.options?.longform)
-            }}
-          />
-        </div>
-      )}
-      {openPublish && <WatchPublishSettings watch={watch} onSaved={onChanged} />}
-
-      {error && <p className="text-sm text-error">{error}</p>}
-
-      <div className="space-y-2">
-        {items === null ? (
-          <p className="text-sm text-muted">{t('Loading…')}</p>
-        ) : visible.length === 0 ? (
-          <p className="text-sm text-muted">
-            {earlier > 0
-              ? t('Nothing new yet. New videos from this channel will show up here.')
-              : t('Nothing found yet.')}
-          </p>
-        ) : (
-          shown.map((item) => (
-            <ItemRow
-              key={item.id}
-              item={item}
-              busy={busy}
-              act={act}
-              onOpenInStudio={onOpenInStudio}
-            />
-          ))
+      <div className="ops-wc-body space-y-3">
+        {watch.last_error && (
+          <Callout tone="error" title={t('Could not check this channel:')}>
+            <span className="break-words">{watch.last_error}</span>
+            {watch.platform === 'kick' &&
+              ` ${t('Kick has no official way to list videos, so this can stop working without notice.')}`}
+            {watch.enabled && automation.enabled && (
+              <span className="block mt-2">
+                <Button size="sm" variant="subtle" icon="refresh" disabled={busy} onClick={() => void act(() => api.checkWatch(watch.id))}>
+                  {t('Check now')}
+                </Button>
+              </span>
+            )}
+          </Callout>
         )}
-        <div className="flex gap-3 flex-wrap">
-          {visible.length > SHOWN && (
-            <button className="btn-ghost !px-2 !py-1 text-xs" onClick={() => setShowAll(!showAll)}>
-              {showAll ? t('Show fewer') : `${t('Show all')} (${visible.length})`}
-            </button>
+
+        {watch.creator && <CreatorLine creator={watch.creator} onOpen={onOpenCreator} />}
+
+        {openSetup && (
+          <p className="ops-wc-setup">
+            <Icon name="sparkle" size={14} />
+            {t('Set it up now. Nothing is clipped until the channel posts something new.')}
+          </p>
+        )}
+        <div className="ops-wc-tabs">
+          <Button
+            size="sm"
+            variant="subtle"
+            icon="scissors"
+            iconRight={openClips ? 'chevron-up' : 'chevron-down'}
+            aria-expanded={openClips}
+            onClick={() => setOpenClips(!openClips)}
+          >
+            {t('Clip settings')}
+          </Button>
+          <Button
+            size="sm"
+            variant="subtle"
+            icon="send"
+            iconRight={openPublish ? 'chevron-up' : 'chevron-down'}
+            aria-expanded={openPublish}
+            onClick={() => setOpenPublish(!openPublish)}
+          >
+            {t('Publishing')}: {t(publishModeLabel(watch.publish.mode))}
+          </Button>
+        </div>
+
+        {openClips && (
+          <div className="ops-wc-panel anim-rise">
+            <label className="ops-field-inline">
+              <span className="label">{t('Preset')}</span>
+              <select
+                className="input !w-56"
+                value={watch.preset}
+                disabled={busy}
+                onChange={(e) => void act(() => api.patchWatch(watch.id, { preset: e.target.value }))}
+              >
+                {automation.presets.map((p) => (
+                  <option key={p.id} value={p.id} title={p.description}>
+                    {t(p.name)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <QueueItemSettings
+              key={`watch-${watch.id}`}
+              job={{ id: watch.id, settings: watch.options }}
+              heading="Settings for every video from this channel"
+              autoSave
+              save={(patch) => api.patchWatch(watch.id, { options: patch })}
+              onSaved={onChanged}
+              channel={{
+                mode: watch.publish.mode,
+                max_posts: watch.publish.max_posts,
+                presetLongform: Boolean(automation.presets.find((p) => p.id === watch.preset)?.options?.longform)
+              }}
+            />
+          </div>
+        )}
+        {openPublish && (
+          <div className="ops-wc-panel anim-rise">
+            <WatchPublishSettings watch={watch} onSaved={onChanged} />
+          </div>
+        )}
+
+        {error && (
+          <p className="ops-qi-fail" role="alert">
+            <Icon name="alert" size={13} />
+            {error}
+          </p>
+        )}
+
+        <div className="space-y-2">
+          {items === null ? (
+            <div className="space-y-2" aria-busy="true">
+              <Skeleton h={52} radius={12} />
+              <Skeleton h={52} radius={12} />
+            </div>
+          ) : visible.length === 0 ? (
+            <p className="ops-wc-none">
+              <Icon name="clock" size={14} />
+              {earlier > 0
+                ? t('Nothing new yet. New videos from this channel will show up here.')
+                : t('Nothing found yet.')}
+            </p>
+          ) : (
+            shown.map((item) => (
+              <ItemRow
+                key={item.id}
+                item={item}
+                busy={busy}
+                act={act}
+                onOpenInStudio={onOpenInStudio}
+              />
+            ))
           )}
-          {earlier > 0 && (
-            <button
-              className="btn-ghost !px-2 !py-1 text-xs"
-              onClick={() => setShowEarlier(!showEarlier)}
-              title={t('Videos that were already on the channel when you started watching it.')}
-            >
-              {showEarlier
-                ? t('Hide earlier videos')
-                : `${t('Show earlier videos')} (${earlier})`}
-            </button>
+          {(visible.length > SHOWN || earlier > 0) && (
+            <div className="flex gap-2 flex-wrap">
+              {visible.length > SHOWN && (
+                <Button
+                  size="sm"
+                  variant="subtle"
+                  iconRight={showAll ? 'chevron-up' : 'chevron-down'}
+                  aria-expanded={showAll}
+                  onClick={() => setShowAll(!showAll)}
+                >
+                  {showAll ? t('Show fewer') : `${t('Show all')} (${visible.length})`}
+                </Button>
+              )}
+              {earlier > 0 && (
+                <Button
+                  size="sm"
+                  variant="subtle"
+                  icon="clock"
+                  onClick={() => setShowEarlier(!showEarlier)}
+                  title={t('Videos that were already on the channel when you started watching it.')}
+                >
+                  {showEarlier
+                    ? t('Hide earlier videos')
+                    : `${t('Show earlier videos')} (${earlier})`}
+                </Button>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -416,78 +474,59 @@ function ItemRow({
     detail = `${item.clips ?? 0} ${item.clips === 1 ? t('clip') : t('clips')}`
   }
 
-  const small = 'btn-ghost !px-2 !py-1 text-xs'
   return (
-    <div className="ops-wc-item space-y-1.5">
+    <div className="ops-wc-item space-y-1.5" data-status={item.status}>
       <div className="flex items-start gap-3 flex-wrap">
         <div className="min-w-0 flex-1">
           <button
-            className="text-sm font-medium text-ink text-left hover:text-gold-strong truncate max-w-full block"
+            type="button"
+            className="ops-wc-item-title"
             title={item.url}
             onClick={() => void window.studio?.openExternal(item.url)}
           >
             {item.title || item.video_id}
           </button>
-          <p className="text-xs text-muted">
-            {when ? relative(when) : ''}
-            <span className={`ml-2 ${tone}`}>{t(text)}</span>
-            {detail && <span className="ml-2">{t(detail)}</span>}
+          <p className="ops-wc-item-meta">
+            {when ? <span>{relative(when)}</span> : null}
+            <span className={tone}>{t(text)}</span>
+            {detail && <span className="min-w-0">{t(detail)}</span>}
           </p>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
           {(item.status === 'earlier' || item.status === 'skipped' || item.status === 'error') && (
-            <button
-              className={small}
-              disabled={busy}
-              onClick={() => void act(() => api.clipWatchItem(item.id))}
-            >
+            <Button size="sm" variant="subtle" icon="scissors" disabled={busy} onClick={() => void act(() => api.clipWatchItem(item.id))}>
               {t('Clip this')}
-            </button>
+            </Button>
           )}
           {(item.status === 'waiting_for_video' || item.status === 'waiting_for_queue') && (
-            <button
-              className={small}
-              disabled={busy}
-              onClick={() => void act(() => api.skipWatchItem(item.id))}
-            >
+            <Button size="sm" variant="subtle" disabled={busy} onClick={() => void act(() => api.skipWatchItem(item.id))}>
               {t('Skip')}
-            </button>
+            </Button>
           )}
           {item.status === 'failed' && (
-            <button
-              className={small}
-              onClick={() => window.dispatchEvent(new CustomEvent('open-queue'))}
-            >
+            <Button size="sm" variant="subtle" iconRight="arrow-right" onClick={() => window.dispatchEvent(new CustomEvent('open-queue'))}>
               {t('Open queue')}
-            </button>
+            </Button>
           )}
           {item.status === 'complete' && onOpenInStudio && (
-            <button className={small} onClick={() => onOpenInStudio(item.video_id)}>
+            <Button size="sm" variant="subtle" icon="film" onClick={() => onOpenInStudio(item.video_id)}>
               {t('Open in editor')}
-            </button>
+            </Button>
           )}
         </div>
       </div>
 
       {item.status === 'complete' && (
-        <div className="text-xs space-y-1">
+        <div className="text-xs space-y-1.5">
           {item.publish_state === 'ask' && (
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-warn">{t('Ready to publish.')}</span>
-              <button
-                className="btn-accent !px-2 !py-1 text-xs"
-                disabled={busy}
-                onClick={() => void act(() => api.publishWatchItem(item.id))}
-              >
+              <Button size="sm" variant="accent" icon="send" disabled={busy} onClick={() => void act(() => api.publishWatchItem(item.id))}>
                 {t('Publish')}
-              </button>
-              <button
-                className={small}
-                disabled={busy}
-                onClick={() => void act(() => api.skipWatchItem(item.id))}
-              >
+              </Button>
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => void act(() => api.skipWatchItem(item.id))}>
                 {t("Don't publish")}
-              </button>
+              </Button>
             </div>
           )}
           {item.publish_state === 'publishing' &&
@@ -513,25 +552,43 @@ function ItemRow({
           )}
           {item.publish_error && <p className="text-warn">{item.publish_error}</p>}
           {deliveries.length > 0 && (
-            <div className="flex gap-x-4 gap-y-1 flex-wrap items-center">
+            <div className="flex gap-x-2 gap-y-1.5 flex-wrap items-center">
               {deliveries.map((d) => (
-                <span key={d.platform} title={d.errors.join('\n')}>
-                  <span className="font-medium">{platformLabel(d.platform)}</span>
-                  {d.published > 0 && <span className="text-gold"> ✓ {d.published}</span>}
-                  {d.waiting > 0 && <span className="text-muted"> ⏳ {d.waiting}</span>}
-                  {d.failed > 0 && <span className="text-error"> ✗ {d.failed}</span>}
-                  {d.skipped > 0 && <span className="text-warn"> – {d.skipped}</span>}
+                <span key={d.platform} className="ops-delivery" title={d.errors.join('\n')}>
+                  <span className="font-medium text-ink">{platformLabel(d.platform)}</span>
+                  {d.published > 0 && (
+                    <span className="text-success" aria-label={`${d.published} ${t('published')}`}>
+                      <Icon name="check" size={11} /> {d.published}
+                    </span>
+                  )}
+                  {d.waiting > 0 && (
+                    <span className="text-muted" aria-label={`${d.waiting} ${t('waiting')}`}>
+                      <Icon name="clock" size={11} /> {d.waiting}
+                    </span>
+                  )}
+                  {d.failed > 0 && (
+                    <span className="text-error" aria-label={`${d.failed} ${t('failed')}`}>
+                      <Icon name="x" size={11} /> {d.failed}
+                    </span>
+                  )}
+                  {d.skipped > 0 && (
+                    <span className="text-warn" aria-label={`${d.skipped} ${t('skipped')}`}>
+                      <Icon name="ban" size={11} /> {d.skipped}
+                    </span>
+                  )}
                 </span>
               ))}
               {anyFailed && item.publish_state === 'done' && (
-                <button
-                  className={small}
+                <Button
+                  size="sm"
+                  variant="subtle"
+                  icon="retry"
                   disabled={busy}
                   onClick={() => void act(() => api.publishWatchItem(item.id))}
                   title={t('Send again only the ones that failed.')}
                 >
                   {t('Retry failed')}
-                </button>
+                </Button>
               )}
             </div>
           )}

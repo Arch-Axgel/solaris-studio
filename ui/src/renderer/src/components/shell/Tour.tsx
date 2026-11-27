@@ -27,7 +27,7 @@ const STOPS: Stop[] = [
     side: 'right',
     icon: 'plus',
     title: 'Start here',
-    body: 'The gold orb opens New clips from any page. Paste a link or drop a file, and press Generate.',
+    body: 'The New clips button works from any page. Paste a link or drop a file, and press Generate.',
     keys: ['Ctrl', 'N']
   },
   {
@@ -49,6 +49,18 @@ const STOPS: Stop[] = [
 ]
 
 const PAD = 6
+
+/** The target's own border box, clamped to the window. Anything spilling out
+ *  of it (a key chip, a badge) must not stretch or shift the ring, and a
+ *  target half off-screen still gets a ring the user can see. */
+function targetRect(el: HTMLElement): DOMRect {
+  const r = el.getBoundingClientRect()
+  const left = Math.max(PAD, r.left)
+  const top = Math.max(PAD, r.top)
+  const right = Math.min(window.innerWidth - PAD, r.right)
+  const bottom = Math.min(window.innerHeight - PAD, r.bottom)
+  return new DOMRect(left, top, Math.max(0, right - left), Math.max(0, bottom - top))
+}
 
 function visibleTarget(sel: string): HTMLElement | null {
   const all = Array.from(document.querySelectorAll<HTMLElement>(sel))
@@ -79,7 +91,14 @@ export default function Tour(): JSX.Element | null {
   const measure = useCallback((): void => {
     if (!stop) return
     const el = visibleTarget(stop.selector)
-    setRect(el ? el.getBoundingClientRect() : null)
+    setRect((prev) => {
+      if (!el) return null
+      const next = targetRect(el)
+      // Same box: keep the old object so the 400ms poll doesn't re-render.
+      return prev && prev.x === next.x && prev.y === next.y && prev.width === next.width && prev.height === next.height
+        ? prev
+        : next
+    })
   }, [stop])
 
   useLayoutEffect(() => {

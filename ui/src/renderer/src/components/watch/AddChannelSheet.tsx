@@ -219,7 +219,7 @@ export default function AddChannelSheet({
             </Button>
           )}
           <Button
-            variant={current === last ? 'gold' : 'accent'}
+            variant="gold"
             className={current > 0 && current < last ? '' : 'ml-auto'}
             iconRight={current === last ? undefined : 'arrow-right'}
             icon={current === last ? 'radar' : undefined}
@@ -436,7 +436,6 @@ export default function AddChannelSheet({
                 />
               </Field>
               <Toggle
-                size="sm"
                 checked={addOnlyMine}
                 onChange={setAddOnlyMine}
                 label={t('Only use my hashtags')}

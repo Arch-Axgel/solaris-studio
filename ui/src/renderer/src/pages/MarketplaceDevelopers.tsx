@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { t } from '../lib/i18n'
 import { gitSource } from '../lib/marketplace'
 import type { PluginSource } from '../lib/plugins'
+import { Button, Callout } from '../components/ui'
 
 /** The Marketplace's For developers section: install a pipeline you are
  *  writing from a folder on this PC or a Git repository at one commit. It is
@@ -30,24 +31,21 @@ export default function MarketplaceDevelopers({
   }
   return (
     <div className="market-dev space-y-4 max-w-3xl anim-rise">
-      <button className="btn-ghost !py-1.5" onClick={onBack}>
-        ← {t('Back to Browse')}
-      </button>
+      <Button variant="subtle" size="sm" icon="arrow-left" className="market-back" onClick={onBack}>
+        {t('Back to Browse')}
+      </Button>
       <div>
         <h3 className="t-xl text-ink">{t('For developers')}</h3>
         <p className="text-sm text-muted mt-1">
           {t('Solaris Studio hasn’t checked pipelines installed here. To find pipelines, use Browse.')}
         </p>
       </div>
-      {!manage && (
-        <div className="card text-sm text-warn">{t('Installing pipelines needs the Solaris Studio desktop app.')}</div>
-      )}
-      <p className="text-sm text-warn">
-        ⚠{' '}
+      {!manage && <Callout tone="info">{t('Installing pipelines needs the Solaris Studio desktop app.')}</Callout>}
+      <Callout tone="warn">
         {t(
           'A pipeline from a folder or a link is not listed anywhere. Install only code you trust: it can do anything you can do on this PC.'
         )}
-      </p>
+      </Callout>
       <section className="card card-glass space-y-3">
         <h3 className="t-md text-ink">{t('From GitHub or another Git host')}</h3>
         <label className="block space-y-1">
@@ -72,10 +70,10 @@ export default function MarketplaceDevelopers({
           <span className="label">{t('Folder in the repository (if it isn’t at the top)')}</span>
           <input className="input" placeholder="plugins/my-plugin" value={sub} onChange={(e) => setSub(e.target.value)} />
         </label>
-        {problem && <p className="text-sm text-error">{problem}</p>}
-        <button className="btn-accent" disabled={!manage || (!link.trim() && !commit.trim())} onClick={fromGit}>
+        {problem && <Callout tone="error">{problem}</Callout>}
+        <Button variant="accent" icon="eye" disabled={!manage || (!link.trim() && !commit.trim())} onClick={fromGit}>
           {t('Look at it before installing')}
-        </button>
+        </Button>
         <p className="text-xs text-muted">
           {t(
             'A commit, not a branch: what you look at is exactly what gets installed. Solaris Studio reads the files without running anything from them.'
@@ -92,21 +90,19 @@ export default function MarketplaceDevelopers({
             onChange={(e) => setFolder(e.target.value)}
           />
           {pick && (
-            <button
-              className="btn-ghost shrink-0"
-              onClick={() => void pick().then((p) => p && setFolder(p))}
-            >
+            <Button variant="ghost" icon="folder" className="shrink-0" onClick={() => void pick().then((p) => p && setFolder(p))}>
               {t('Choose…')}
-            </button>
+            </Button>
           )}
         </div>
-        <button
-          className="btn-accent"
+        <Button
+          variant="accent"
+          icon="eye"
           disabled={!manage || !folder.trim()}
           onClick={() => onInstall({ kind: 'folder', path: folder.trim() })}
         >
           {t('Look at it before installing')}
-        </button>
+        </Button>
         <p className="text-xs text-muted">
           {t('For pipelines you are writing. Installing the same version again replaces it.')}
         </p>

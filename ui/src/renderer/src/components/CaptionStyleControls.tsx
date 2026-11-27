@@ -305,159 +305,170 @@ export default function CaptionStyleControls({
   // the post style was picked: the controls that look replaces would
   // change nothing, so they go.
   const highlights = isHighlights(style, landscape)
+  // The example sits beside the controls when the container has room for
+  // both (caption-style in b4-editor.css), and under them when it has not.
   return (
-    <>
-      <div className="grid grid-cols-2 gap-3">
-        {!highlights && (
-          <div className="col-span-2">
-            <label htmlFor={`${idPrefix}-font`} className="label">
-              Font
-            </label>
-            <select
-              id={`${idPrefix}-font`}
-              className="input mt-1"
-              value={style.font}
-              style={{ fontFamily: `'${style.font}', sans-serif` }}
-              onChange={(e) => onChange('font', e.target.value)}
-            >
-              {CAPTION_FONTS.map((f) => (
-                <option key={f} value={f} style={{ fontFamily: `'${f}', sans-serif` }}>
-                  {f}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-        {!highlights && (
+    <div className="caption-style">
+      <div className="caption-style-controls">
+        <div className="grid grid-cols-2 gap-3">
+          {!highlights && (
+            <div className="col-span-2">
+              <label htmlFor={`${idPrefix}-font`} className="label">
+                Font
+              </label>
+              <select
+                id={`${idPrefix}-font`}
+                className="input mt-1"
+                value={style.font}
+                style={{ fontFamily: `'${style.font}', sans-serif` }}
+                onChange={(e) => onChange('font', e.target.value)}
+              >
+                {CAPTION_FONTS.map((f) => (
+                  <option key={f} value={f} style={{ fontFamily: `'${f}', sans-serif` }}>
+                    {f}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          {!highlights && (
+            <div>
+              <label htmlFor={`${idPrefix}-color`} className="label">
+                Text colour
+              </label>
+              {/* A swatch with its hex beside it, on the same 36px row as the
+                  size slider next to it, never a full-width white bar. */}
+              <div className="caption-style-row">
+                <input
+                  id={`${idPrefix}-color`}
+                  type="color"
+                  className="caption-style-swatch"
+                  value={style.color}
+                  onChange={(e) => onChange('color', e.target.value.toUpperCase())}
+                />
+                <span className="t-mono text-xs text-muted uppercase">{style.color}</span>
+              </div>
+            </div>
+          )}
           <div>
-            <label htmlFor={`${idPrefix}-color`} className="label">
-              Text colour
+            <label htmlFor={`${idPrefix}-size`} className="label">
+              Size ({style.font_size})
             </label>
-            <input
-              id={`${idPrefix}-color`}
-              type="color"
-              className="mt-1 h-9 w-full rounded-lg bg-raised border border-line/60 cursor-pointer"
-              value={style.color}
-              onChange={(e) => onChange('color', e.target.value.toUpperCase())}
-            />
+            <div className="caption-style-row">
+              <input
+                id={`${idPrefix}-size`}
+                type="range"
+                min={40}
+                max={140}
+                className="w-full accent-accent-strong"
+                value={style.font_size}
+                onChange={(e) => onChange('font_size', Number(e.target.value))}
+              />
+            </div>
           </div>
-        )}
-        <div>
-          <label htmlFor={`${idPrefix}-size`} className="label">
-            Size ({style.font_size})
-          </label>
-          <input
-            id={`${idPrefix}-size`}
-            type="range"
-            min={40}
-            max={140}
-            className="mt-3 w-full accent-accent-strong"
-            value={style.font_size}
-            onChange={(e) => onChange('font_size', Number(e.target.value))}
-          />
+          {!highlights && !hidePosition && (
+            <div>
+              <label htmlFor={`${idPrefix}-pos`} className="label">
+                Position
+              </label>
+              <select
+                id={`${idPrefix}-pos`}
+                className="input mt-1"
+                value={style.position}
+                onChange={(e) => onChange('position', e.target.value as CaptionStyle['position'])}
+              >
+                <option value="bottom">Bottom</option>
+                <option value="middle">Middle</option>
+                <option value="top">Top</option>
+              </select>
+            </div>
+          )}
+          {!hideWordsPerCaption && (
+            <div>
+              <label htmlFor={`${idPrefix}-words`} className="label">
+                Words per caption
+              </label>
+              <select
+                id={`${idPrefix}-words`}
+                className="input mt-1"
+                value={style.words_per_caption}
+                onChange={(e) => onChange('words_per_caption', Number(e.target.value))}
+              >
+                {[1, 2, 3, 4, 5, 6].map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
-        {!highlights && !hidePosition && (
-          <div>
-            <label htmlFor={`${idPrefix}-pos`} className="label">
-              Position
+        {!highlights && (
+          <label className="caption-style-check">
+            <input
+              type="checkbox"
+              className="size-[18px] shrink-0 accent-accent-strong"
+              checked={style.uppercase}
+              onChange={(e) => onChange('uppercase', e.target.checked)}
+            />
+            UPPERCASE captions
+          </label>
+        )}
+
+        {!highlights && (
+          <div className="flex items-center gap-3">
+            <label className="caption-style-check">
+              <input
+                type="checkbox"
+                className="size-[18px] shrink-0 accent-accent-strong"
+                checked={style.highlight}
+                onChange={(e) => onChange('highlight', e.target.checked)}
+              />
+              Highlight each word as it&apos;s said
             </label>
-            <select
-              id={`${idPrefix}-pos`}
-              className="input mt-1"
-              value={style.position}
-              onChange={(e) => onChange('position', e.target.value as CaptionStyle['position'])}
-            >
-              <option value="bottom">Bottom</option>
-              <option value="middle">Middle</option>
-              <option value="top">Top</option>
-            </select>
+            {style.highlight && (
+              <input
+                type="color"
+                aria-label="Highlight colour"
+                className="caption-style-swatch caption-style-swatch-sm"
+                value={style.highlight_color}
+                onChange={(e) => onChange('highlight_color', e.target.value.toUpperCase())}
+              />
+            )}
           </div>
         )}
-        {!hideWordsPerCaption && (
-          <div>
-            <label htmlFor={`${idPrefix}-words`} className="label">
-              Words per caption
-            </label>
-            <select
-              id={`${idPrefix}-words`}
-              className="input mt-1"
-              value={style.words_per_caption}
-              onChange={(e) => onChange('words_per_caption', Number(e.target.value))}
+
+        {!highlights && !hideSecondSpeaker && (
+          <div className="flex items-center gap-3">
+            <label
+              className="caption-style-check"
+              title="When two people talk in a clip, the main speaker keeps the text colour and the other person's captions take this one. A clip with one voice looks the same as always."
             >
-              {[1, 2, 3, 4, 5, 6].map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
+              <input
+                type="checkbox"
+                className="size-[18px] shrink-0 accent-accent-strong"
+                checked={style.second_speaker}
+                onChange={(e) => onChange('second_speaker', e.target.checked)}
+              />
+              Second speaker in another colour
+            </label>
+            {style.second_speaker && (
+              <input
+                type="color"
+                aria-label="Second speaker's colour"
+                className="caption-style-swatch caption-style-swatch-sm"
+                value={style.second_speaker_color}
+                onChange={(e) => onChange('second_speaker_color', e.target.value.toUpperCase())}
+              />
+            )}
           </div>
         )}
       </div>
-      {!highlights && (
-        <label className="flex items-center gap-2 cursor-pointer text-sm">
-          <input
-            type="checkbox"
-            className="size-4 accent-accent-strong"
-            checked={style.uppercase}
-            onChange={(e) => onChange('uppercase', e.target.checked)}
-          />
-          UPPERCASE captions
-        </label>
-      )}
 
-      {!highlights && (
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 cursor-pointer text-sm">
-            <input
-              type="checkbox"
-              className="size-4 accent-accent-strong"
-              checked={style.highlight}
-              onChange={(e) => onChange('highlight', e.target.checked)}
-            />
-            Highlight each word as it&apos;s said
-          </label>
-          {style.highlight && (
-            <input
-              type="color"
-              aria-label="Highlight colour"
-              className="h-7 w-10 rounded-md bg-raised border border-line/60 cursor-pointer shrink-0"
-              value={style.highlight_color}
-              onChange={(e) => onChange('highlight_color', e.target.value.toUpperCase())}
-            />
-          )}
-        </div>
-      )}
-
-      {!highlights && !hideSecondSpeaker && (
-        <div className="flex items-center gap-3">
-          <label
-            className="flex items-center gap-2 cursor-pointer text-sm"
-            title="When two people talk in a clip, the main speaker keeps the text colour and the other person's captions take this one. A clip with one voice looks the same as always."
-          >
-            <input
-              type="checkbox"
-              className="size-4 accent-accent-strong"
-              checked={style.second_speaker}
-              onChange={(e) => onChange('second_speaker', e.target.checked)}
-            />
-            Second speaker in another colour
-          </label>
-          {style.second_speaker && (
-            <input
-              type="color"
-              aria-label="Second speaker's colour"
-              className="h-7 w-10 rounded-md bg-raised border border-line/60 cursor-pointer shrink-0"
-              value={style.second_speaker_color}
-              onChange={(e) => onChange('second_speaker_color', e.target.value.toUpperCase())}
-            />
-          )}
-        </div>
-      )}
-
-      <div>
+      <div className="caption-style-example">
         <p className="label mb-1">Example</p>
         {highlights ? <HighlightsExample style={style} /> : <CaptionExample style={style} />}
       </div>
-    </>
+    </div>
   )
 }

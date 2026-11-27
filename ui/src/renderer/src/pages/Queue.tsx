@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { api } from '../lib/api'
+import { api, errorText } from '../lib/api'
 import type { QueueJob } from '../lib/types'
 import { formatQueueEta, jobLabel } from '../lib/queue'
 import QueueItem from '../components/queue/QueueItem'
@@ -10,7 +10,7 @@ import { getLiveProgress, useActiveJob, useQueueEta } from '../lib/stores/active
 import { useVisible } from '../lib/stores/useVisible'
 import { openCreate, useBreadcrumbs } from '../lib/nav'
 import { celebrate } from '../lib/motion'
-import { useMedia } from '../components/watch/useMedia'
+import { useWidth } from '../components/watch/useMedia'
 import { Icon, type IconName } from '../components/icons'
 import {
   Button,
@@ -45,6 +45,14 @@ const PAGE = 30
 
 type Lane = 'processing' | 'next' | 'history'
 
+/** Lanes side by side only when each one gets room for a title, a meta line
+ *  and its row actions on one line (about 420px). In between, two columns;
+ *  below that, one lane at a time behind tabs. Measured on the page itself,
+ *  so the rail and any drawer are taken into account. */
+function lanesFor(width: number): 1 | 2 | 3 {
+  return width >= 1340 ? 3 : width >= 900 ? 2 : 1
+}
+
 export default function Queue({
   onOpenInStudio,
   active = true
@@ -59,7 +67,10 @@ export default function Queue({
   const activeJob = useActiveJob()
   const queueEta = useQueueEta()
   const visible = useVisible(active)
-  const wide = useMedia('(min-width: 1280px)')
+  const [pageRef, pageWidth] = useWidth<HTMLDivElement>()
+  const cols = lanesFor(pageWidth)
+  // Tabs only while there are lanes to switch between; history alone keeps its title.
+  const tabbed = cols === 1 && remaining > 0
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [lane, setLane] = useState<Lane>('next')
@@ -87,6 +98,23 @@ export default function Queue({
 
   useEffect(() => setShown(PAGE), [historyTab, query])
 
+  // How many clips each finished video gave, so a run that produced none
+  // says so instead of offering a gold "Clips" button to an empty screen.
+  // One read of the library per change in the finished list.
+  const [clipCounts, setClipCounts] = useState<Record<string, number>>({})
+  const doneKey = (snapshot?.completed ?? []).map((j) => j.video_id).join(',')
+  useEffect(() => {
+    if (!doneKey) return
+    let live = true
+    api
+      .videos()
+      .then((vs) => live && setClipCounts(Object.fromEntries(vs.map((v) => [v.video_id, v.clip_count]))))
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [doneKey])
+
   const act = async (fn: () => Promise<unknown>, ok?: string): Promise<void> => {
     setBusy(true)
     setError(null)
@@ -95,7 +123,7 @@ export default function Queue({
       refresh()
       if (ok) toast({ title: ok, tone: 'success', icon: 'check', duration: 2500 })
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(errorText(e))
     } finally {
       setBusy(false)
     }
@@ -116,7 +144,7 @@ export default function Queue({
         }
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(errorText(e))
     } finally {
       refresh()
     }
@@ -157,10 +185,21 @@ export default function Queue({
       onChanged={refresh}
       onOpenInStudio={onOpenInStudio}
       large={large}
+      clips={job.status === 'done' ? (clipCounts[job.video_id] ?? null) : null}
     />
   )
 
-  const laneHead = (id: Lane, icon: IconName, title: string, count: number, action?: React.ReactNode): JSX.Element => (
+  // Behind tabs the tab already carries the title and the count; the lane
+  // keeps only its action, on a slim bar, and can't be collapsed (a
+  // collapsed lane would leave an empty tab).
+  const laneHead = (id: Lane, icon: IconName, title: string, count: number, action?: React.ReactNode): JSX.Element | null =>
+    tabbed ? (
+      action ? (
+        <div className="ops-lane-head ops-lane-head-slim">
+          <div className="ml-auto flex items-center gap-2">{action}</div>
+        </div>
+      ) : null
+    ) : (
     <div className="ops-lane-head">
       <button
         type="button"
@@ -176,11 +215,12 @@ export default function Queue({
       <div className="ml-auto flex items-center gap-2">{action}</div>
     </div>
   )
+  const isOpen = (id: Lane): 'true' | 'false' => (tabbed || !collapsed[id] ? 'true' : 'false')
 
   const processingLane = (
     <section className="ops-lane" data-lane="processing" aria-label={t('Processing')}>
       {laneHead('processing', 'zap', 'Processing', processingJobs.length)}
-      <div className="collapse" data-open={collapsed.processing ? 'false' : 'true'}>
+      <div className="collapse" data-open={isOpen('processing')}>
         <div>
           <div className="ops-lane-body">
             {processingJobs.length === 0 ? (
@@ -218,15 +258,15 @@ export default function Queue({
           />
         ) : undefined
       )}
-      <div className="collapse" data-open={collapsed.next ? 'false' : 'true'}>
+      <div className="collapse" data-open={isOpen('next')}>
         <div>
           <div className="ops-lane-body">
             {queuedJobs.length === 0 ? (
               <div className="ops-lane-empty">
                 <Icon name="plus" size={20} />
                 <p>{t('Nothing waiting.')}</p>
-                <Button size="sm" variant="subtle" onClick={() => openCreate({ mode: 'queue' })}>
-                  {t('+ Add videos')}
+                <Button size="sm" variant="subtle" icon="plus" onClick={() => openCreate({ mode: 'queue' })}>
+                  {t('Add videos')}
                 </Button>
               </div>
             ) : (
@@ -271,10 +311,10 @@ export default function Queue({
           />
         ) : undefined
       )}
-      <div className="collapse" data-open={collapsed.history ? 'false' : 'true'}>
+      <div className="collapse" data-open={isOpen('history')}>
         <div>
           <div className="ops-lane-body">
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="ops-lane-tools">
               <Segmented
                 size="sm"
                 ariaLabel={t('Show')}
@@ -285,9 +325,13 @@ export default function Queue({
                   { id: 'failed', label: t('Failed'), icon: 'alert', badge: failedCount || undefined }
                 ]}
               />
-              <div className="flex-1 min-w-40">
-                <SearchInput value={query} onChange={setQuery} placeholder={t('Filter by title')} ariaLabel={t('Filter by title')} />
-              </div>
+              <SearchInput
+                className="ops-lane-search"
+                value={query}
+                onChange={setQuery}
+                placeholder={t('Filter by title')}
+                ariaLabel={t('Filter by title')}
+              />
             </div>
             {filtered.length === 0 ? (
               <div className="ops-lane-empty">
@@ -346,7 +390,7 @@ export default function Queue({
     )
 
   return (
-    <div className="ops-page max-w-[1600px] mx-auto p-6 space-y-6 w-full">
+    <div ref={pageRef} className="ops-page max-w-[1600px] mx-auto p-6 space-y-6 w-full" data-lanes={cols}>
       <PageHeader
         eyebrow={t('Make')}
         icon="layers"
@@ -354,9 +398,17 @@ export default function Queue({
         vtName="page-title"
         subtitle={t('Queue up a batch, then leave Solaris Studio running - it works through them on its own.')}
         actions={
-          <Button variant="accent" onClick={(e) => openCreate({ mode: 'queue', originRect: e.currentTarget.getBoundingClientRect() })}>
-            {t('+ Add videos')}
-          </Button>
+          // An empty queue already says "Add videos" in its own empty state;
+          // one gold call to action there, not two on the same screen.
+          snapshot && remaining === 0 ? undefined : (
+            <Button
+              variant="gold"
+              icon="plus"
+              onClick={(e) => openCreate({ mode: 'queue', originRect: e.currentTarget.getBoundingClientRect() })}
+            >
+              {t('Add videos')}
+            </Button>
+          )
         }
       />
 
@@ -418,10 +470,12 @@ export default function Queue({
               <CountUp value={remaining} className="text-foil" />{' '}
               <span className="text-ink">{remaining === 1 ? t('video remaining') : t('videos remaining')}</span>
             </p>
-            {queueEta !== null && (
-              <p className="text-sm text-muted">
-                {confident ? t('About') : t('Roughly')} {formatQueueEta(queueEta)} {t('to go')}
-                {!confident && ` · ${t('the estimate sharpens after a few videos')}`}
+            {/* The ring already shows the time left; only its confidence is
+                news here. */}
+            {queueEta !== null && !confident && (
+              <p className="text-sm text-muted ops-cap-first inline-flex items-center gap-1.5">
+                <Icon name="info" size={13} />
+                <span>{t('the estimate sharpens after a few videos')}</span>
               </p>
             )}
             {paused && (
@@ -443,8 +497,11 @@ export default function Queue({
       )}
 
       {snapshot && remaining === 0 && (
-        <div className="card ops-empty anim-rise">
+        // With history below it the empty queue is a line, not a poster:
+        // the finished and failed videos are the content then.
+        <div className={`card ops-empty anim-rise ${completedCount + failedCount > 0 ? 'ops-empty-slim' : ''}`}>
           <EmptyState
+            compact={completedCount + failedCount > 0}
             illustration="queue"
             title={t('Your queue is empty')}
             body={t('Queue lets you line up many videos and leave Solaris Studio working.')}
@@ -454,7 +511,7 @@ export default function Queue({
                 icon="plus"
                 onClick={(e) => openCreate({ mode: 'queue', originRect: e.currentTarget.getBoundingClientRect() })}
               >
-                {t('New clips')}
+                {t('Add videos')}
               </Button>
             }
           />
@@ -464,13 +521,22 @@ export default function Queue({
       {snapshot &&
         (remaining === 0 ? (
           completedCount + failedCount > 0 && historyLane
-        ) : wide ? (
-          <div className="ops-lanes">
+        ) : cols === 3 ? (
+          <div className="ops-lanes" data-cols="3">
             {processingLane}
             {nextLane}
             {historyLane}
           </div>
+        ) : cols === 2 ? (
+          <div className="ops-lanes" data-cols="2">
+            <div className="ops-lanes-col">
+              {processingLane}
+              {historyLane}
+            </div>
+            <div className="ops-lanes-col">{nextLane}</div>
+          </div>
         ) : (
+
           <div className="space-y-4">
             <Tabs
               ariaLabel={t('Queue lanes')}

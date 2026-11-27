@@ -10,12 +10,15 @@ import AddChannelSheet from '../components/watch/AddChannelSheet'
 import ChannelTile, { type TileStats } from '../components/watch/ChannelTile'
 import EventsTimeline from '../components/watch/EventsTimeline'
 import { refreshWatchActivity, useWatchActivity } from '../components/watch/useWatchActivity'
-import { useMedia } from '../components/watch/useMedia'
+import { useWidth } from '../components/watch/useMedia'
 import { t } from '../lib/i18n'
 import { useAIStatus } from '../lib/useAIStatus'
 import OpenRouterPrompt from '../components/OpenRouterPrompt'
 import { Icon } from '../components/icons'
-import { Button, Callout, Disclosure, EmptyState, IconButton, PageHeader, Skeleton, toast } from '../components/ui'
+import { Button, Callout, Disclosure, EmptyState, IconButton, PageHeader, Skeleton, Tooltip, toast } from '../components/ui'
+
+/** Recent activity shown before "Show all" when it sits above the channels. */
+const EVENTS_PEEK = 3
 
 /** Watched channels: a creator posts, Solaris Studio clips it, nobody pastes a link.
  *
@@ -46,10 +49,14 @@ export default function Watch({
   const [flash, setFlash] = useState<number | null>(null)
   const [working, setWorking] = useState<Record<number, boolean>>({})
   const [railOpen, setRailOpen] = useState(true)
+  const [allEvents, setAllEvents] = useState(false)
   const inFlight = useRef(false)
   const visible = useVisible(active)
   const activity = useWatchActivity(visible)
-  const wide = useMedia('(min-width: 1440px)')
+  // The activity rail sits beside the channels only when the page itself has
+  // the room (the rail and drawers take their share of the window).
+  const [pageRef, pageWidth] = useWidth<HTMLDivElement>()
+  const wide = pageWidth >= 1180
 
   const refresh = useCallback(async (): Promise<void> => {
     if (inFlight.current) return
@@ -193,6 +200,21 @@ export default function Watch({
       aiStatus.providers.find((p) => p.id === aiStatus.active.provider)?.label ??
       aiStatus.active.provider
     const blocked = Boolean(plan && !plan.automation_allowed)
+    // The common case has nothing to explain: a chip with the model on
+    // hover, next to the radar's own controls. Only a plan that isn't
+    // allowed to run unattended needs the open explanation below.
+    if (!blocked) {
+      return (
+        <Tooltip
+          content={`${label} · ${aiStatus.active.model} (${plan ? t('your plan') : t('your own key')})`}
+        >
+          <span className="ops-ai-chip" tabIndex={0}>
+            <Icon name="sparkle" size={13} />
+            {t('AI')}: {label}
+          </span>
+        </Tooltip>
+      )
+    }
     return (
       <Disclosure
         className="ops-ai"
@@ -225,17 +247,15 @@ export default function Watch({
     )
   })()
 
+  // The AI chip sits in the radar when it is a plain label; the warning and
+  // the local-AI suggestion keep their own row, since they have content.
+  const aiInline = Boolean(aiStatus && !aiStatus.active.local && !aiStatus.signin?.find((s) => s.id === aiStatus.active.provider && !s.automation_allowed))
+  const firstLoadFailed = watches === null && error !== null
+  const hasChannels = Boolean(watches && watches.length > 0)
+
   const grid = (
-    <div className="ops-channels">
-      <button type="button" className="ops-add-tile lift" data-tour="watch-add" onClick={() => setSheet(true)}>
-        <span className="ops-add-orb" aria-hidden>
-          <Icon name="plus" size={22} />
-        </span>
-        <span className="t-md text-ink">{t('+ Watch a channel')}</span>
-        <span className="text-xs text-muted max-w-56 text-center">
-          {t('YouTube, Twitch or Kick. New videos are clipped as they appear.')}
-        </span>
-      </button>
+    <div className="ops-channels-wrap">
+      <div className="ops-channels">
       {watches &&
         status &&
         watches.map((w, i) => (
@@ -255,15 +275,57 @@ export default function Watch({
         ))}
       {!watches && !error && (
         <>
-          <Skeleton h={260} radius={16} />
-          <Skeleton h={260} radius={16} />
+          <Skeleton h={260} radius={16} className="ops-channel-cell" />
+          <Skeleton h={260} radius={16} className="ops-channel-cell" />
         </>
+      )}
+      </div>
+      {hasChannels && (
+        <button type="button" className="ops-add-tile" data-tour="watch-add" onClick={() => setSheet(true)}>
+          <span className="ops-add-orb" aria-hidden>
+            <Icon name="plus" size={18} />
+          </span>
+          <span className="min-w-0 text-left">
+            <span className="block font-semibold text-ink">{t('Watch a channel')}</span>
+            <span className="block text-xs text-muted">
+              {t('YouTube, Twitch or Kick. New videos are clipped as they appear.')}
+            </span>
+          </span>
+          <Icon name="arrow-right" size={16} className="ops-add-arrow" />
+        </button>
       )}
     </div>
   )
 
+  const eventsCard = (
+    <section className="card ops-events-card" aria-label={t('Recent activity')}>
+      <div className="ops-events-card-head">
+        <span className="inline-flex items-center gap-2 t-micro text-gold">
+          <Icon name="clock" size={13} />
+          {t('Recent activity')}
+        </span>
+        {activity && activity.events.length > EVENTS_PEEK && (
+          <Button
+            size="sm"
+            variant="subtle"
+            iconRight={allEvents ? 'chevron-up' : 'chevron-down'}
+            aria-expanded={allEvents}
+            onClick={() => setAllEvents((a) => !a)}
+          >
+            {allEvents ? t('Show fewer') : `${t('Show all')} (${Math.min(activity.events.length, 30)})`}
+          </Button>
+        )}
+      </div>
+      {activity ? (
+        <EventsTimeline activity={activity} limit={allEvents ? 30 : EVENTS_PEEK} />
+      ) : (
+        <Skeleton lines={3} h={14} />
+      )}
+    </section>
+  )
+
   return (
-    <div className="ops-page max-w-[1600px] mx-auto p-6 space-y-5 w-full">
+    <div ref={pageRef} className="ops-page max-w-[1600px] mx-auto p-6 space-y-5 w-full">
       <PageHeader
         eyebrow={t('Make')}
         icon="radar"
@@ -277,12 +339,29 @@ export default function Watch({
         }
       />
 
-      {error && (
+      {error && !firstLoadFailed && (
         <Callout tone="error" title={t('Something went wrong')} onDismiss={() => setError(null)}>
           {error}
         </Callout>
       )}
 
+      {/* Nothing has been read yet: say the engine is away rather than show a
+          radar with "Off" and zero channels, which reads as a wiped list. */}
+      {firstLoadFailed ? (
+        <div className="card ops-empty anim-rise">
+          <EmptyState
+            illustration="sun"
+            title={t('The engine isn’t answering')}
+            body={t('If it was just starting, give it a moment. Your channels appear here as soon as it replies.')}
+            action={
+              <Button variant="ghost" icon="refresh" onClick={() => void refresh()}>
+                {t('Try again')}
+              </Button>
+            }
+          />
+        </div>
+      ) : (
+      <>
       <RadarHero
         status={status}
         watches={watches}
@@ -296,11 +375,14 @@ export default function Watch({
         onTray={(on) => void setKeepInTray(on)}
         onCheckAll={() => void checkAll()}
         onPick={focusWatch}
+        aside={aiInline ? aiChip : null}
       />
 
-      <div className="flex items-start gap-3 flex-wrap">{aiChip}</div>
+      {!aiInline && aiChip && <div className="flex items-start gap-3 flex-wrap">{aiChip}</div>}
 
-      <WatchLive visible={visible} />
+      {/* Off is already said by the radar's switch; the strip is for what
+          the watcher is doing. */}
+      {activity && activity.now.state !== 'off' && <WatchLive visible={visible} />}
 
       {watches && status && watches.length === 0 && (
         <div className="card ops-empty">
@@ -317,7 +399,7 @@ export default function Watch({
         </div>
       )}
 
-      {wide ? (
+      {watches && watches.length === 0 ? null : wide ? (
         <div className="ops-watch-layout" data-rail={railOpen ? 'open' : 'closed'}>
           <div className="min-w-0">{grid}</div>
           <aside className="ops-events-rail" aria-label={t('Recent activity')}>
@@ -345,24 +427,13 @@ export default function Watch({
         </div>
       ) : (
         <>
+          {eventsCard}
           {grid}
-          <div className="card">
-            <Disclosure
-              summary={
-                <span className="inline-flex items-center gap-2 t-micro text-gold">
-                  <Icon name="clock" size={13} />
-                  {t('Recent activity')}
-                  {activity && activity.events.length > 0 && (
-                    <span className="ops-lane-count tabular">{Math.min(activity.events.length, 30)}</span>
-                  )}
-                </span>
-              }
-            >
-              <EventsTimeline activity={activity} />
-            </Disclosure>
-          </div>
         </>
       )}
+      </>
+      )}
+
 
       <AddChannelSheet
         open={sheet}

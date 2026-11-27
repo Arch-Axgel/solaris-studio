@@ -11,9 +11,9 @@ import { Kbd, Segmented, Sheet, toast } from '../ui'
 /** "New clips" (spec 4.3): the Generate bar in a wide sheet, reachable from
  *  anywhere (the orb, Ctrl+N, the palette, Home, Queue, `open-create`).
  *
- *  The Generate now / Add to queue switch is informational: AddVideos
- *  already labels its own button by whether a batch is running. Here it only
- *  sets the hint text. */
+ *  The Generate now / Add to queue switch decides what the button does:
+ *  Generate now starts the queue (or lines up behind a running batch), Add
+ *  to queue only adds, and the videos wait there until Start. */
 
 interface CreatePayload {
   link?: string
@@ -83,7 +83,9 @@ export default function CreateSheet(): JSX.Element | null {
       ? busy
         ? t('A video is already running, so these line up right behind it.')
         : t('The first video starts right away; any others wait their turn.')
-      : t('Line up as many videos as you like. They run one after another, even while you edit.')
+      : busy
+        ? t('Line up as many videos as you like. They run one after another, even while you edit.')
+        : t('They wait in the queue until you press Start there, so you can line up a whole batch first.')
 
   return (
     <Sheet
@@ -143,8 +145,18 @@ export default function CreateSheet(): JSX.Element | null {
             onApplied={() => setPresetKey((k) => k + 1)}
           />
         </div>
+        <p className="lyr-create-explain">
+          {t('A preset sets how new videos in the list start. Videos already listed keep their own settings, and every switch below can still be changed.')}
+        </p>
         <div className="lyr-create-surface card">
-          {session.current > 0 && <AddVideos key={`${session.current}-${presetKey}`} onAdded={done} initialLink={payload?.link} />}
+          {session.current > 0 && (
+            <AddVideos
+              key={`${session.current}-${presetKey}`}
+              onAdded={done}
+              initialLink={payload?.link}
+              start={mode === 'now'}
+            />
+          )}
         </div>
       </div>
     </Sheet>

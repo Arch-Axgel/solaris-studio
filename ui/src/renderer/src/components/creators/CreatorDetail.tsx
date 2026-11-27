@@ -15,7 +15,16 @@ const KNOWLEDGE_LABELS: Record<string, string> = {
   catchphrase: 'Catchphrases',
   joke: 'Running jokes',
   collaborator: 'Collaborators',
-  format: 'Formats'
+  format: 'Formats',
+  life: 'Life & events'
+}
+
+/** A type the app has no label for yet: "life_event" reads "Life event". */
+function knowledgeLabel(type: string): string {
+  const known = KNOWLEDGE_LABELS[type]
+  if (known) return t(known)
+  const words = type.replace(/[_-]+/g, ' ').trim()
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : type
 }
 
 // Why a learned fact is or isn't being used. Catchphrases used to fill up
@@ -152,9 +161,8 @@ export default function CreatorDetail({
         <Tooltip
           content={t('Learns their topics, running jokes and storylines from every video, to pick and title clips better. Stays on this computer.')}
         >
-          <span className="shrink-0">
+          <span className="ops-cdetail-learn">
             <Toggle
-              size="sm"
               checked={!!detail.learning_enabled}
               disabled={busy}
               onChange={setLearning}
@@ -182,16 +190,28 @@ export default function CreatorDetail({
             <div className="ops-cstats">
               {stats.map(([label, n]) => (
                 <div key={label} className="ops-cstat">
-                  <p className="t-micro text-muted">{label}</p>
+                  <p className="t-micro text-muted ops-cstat-label" title={label}>
+                    {label}
+                  </p>
                   <p className="t-kpi">{n === null ? <span className="text-muted">—</span> : <CountUp value={n} />}</p>
                 </div>
               ))}
             </div>
 
-            <div className="flex gap-2 flex-wrap">
-              <Button variant="gold" icon="film" iconRight="arrow-right" onClick={onSeeClips}>
+            {/* Gold only when there is something to see: with no clips the
+                way to the editor stays, but doesn't shout. */}
+            <div className="flex gap-2 flex-wrap items-center">
+              <Button
+                variant={(summary?.clips ?? 0) > 0 ? 'gold' : 'subtle'}
+                icon="film"
+                iconRight="arrow-right"
+                onClick={onSeeClips}
+              >
                 {t('See their clips')}
               </Button>
+              {summary && summary.clips === 0 && (
+                <span className="text-xs text-muted">{t('No clips from this creator yet.')}</span>
+              )}
             </div>
 
             <section className="space-y-2">
@@ -218,7 +238,7 @@ export default function CreatorDetail({
                 ))}
               </div>
               <form
-                className="flex items-center gap-2 mt-2"
+                className="ops-cadd"
                 onSubmit={(e) => {
                   e.preventDefault()
                   if (!addChannel.trim()) return
@@ -230,7 +250,7 @@ export default function CreatorDetail({
                 <select
                   value={addPlatform}
                   onChange={(e) => setAddPlatform(e.target.value)}
-                  className="input !w-auto !px-2 !py-1.5 text-xs"
+                  className="input ops-cadd-platform"
                   aria-label={t('Platform of the channel to add')}
                 >
                   <option value="youtube">YouTube</option>
@@ -241,14 +261,14 @@ export default function CreatorDetail({
                   value={addChannel}
                   onChange={(e) => setAddChannel(e.target.value)}
                   placeholder={t('Add another channel (exact name)')}
-                  className="input flex-1 !py-1.5 text-xs"
+                  className="input ops-cadd-name"
                   aria-label={t('Channel name to add')}
                 />
-                <Button type="submit" size="sm" variant="accent" icon="plus" disabled={busy || !addChannel.trim()}>
+                <Button type="submit" variant="accent" icon="plus" disabled={busy || !addChannel.trim()}>
                   {t('Add')}
                 </Button>
               </form>
-              <p className="text-[11px] text-muted">
+              <p className="text-xs text-muted leading-relaxed">
                 {t(
                   'Use this when the same creator has a channel the app didn’t connect automatically. Their future videos will land on this profile.'
                 )}
@@ -306,7 +326,7 @@ export default function CreatorDetail({
               {Object.entries(knowledgeByType).map(([type, items]) => (
                 <section key={type} className="space-y-1.5">
                   <h4 className="t-micro text-gold flex items-center gap-2">
-                    {t(KNOWLEDGE_LABELS[type] ?? type)}
+                    {knowledgeLabel(type)}
                     <span className="ops-lane-count tabular">{items!.length}</span>
                   </h4>
                   <div className="ops-facts">
@@ -333,6 +353,7 @@ export default function CreatorDetail({
                             size="sm"
                             icon="trash"
                             tone="error"
+                            className="ops-fact-del"
                             disabled={busy}
                             label={t('Delete — this fact is wrong')}
                             aria-label={`${t('Delete learned fact:')} ${k.information}`}
@@ -353,7 +374,7 @@ export default function CreatorDetail({
               <h4 className="t-micro text-gold mb-2">{t('Default branding')}</h4>
               <div className="flex items-center gap-2 flex-wrap">
                 <select
-                  className="input !w-56 !py-1.5 text-sm"
+                  className="input !w-56"
                   value={detail.default_branding_id ?? ''}
                   disabled={busy}
                   aria-label={t('Default branding')}
@@ -383,15 +404,18 @@ export default function CreatorDetail({
                     {t('New branding')}
                   </Button>
                 )}
-                <span className="text-[11px] text-muted">{t('auto-applied to this creator’s videos')}</span>
               </div>
+              <p className="text-xs text-muted mt-2 ops-cap-first">
+                <span>{t('auto-applied to this creator’s videos')}</span>
+              </p>
             </div>
 
             {wmCreating && (
               <div className="ops-wm anim-rise space-y-3">
                 <input
-                  className="input !py-1.5 text-sm !w-64"
+                  className="input !w-64 max-w-full"
                   value={wmName}
+
                   placeholder={t('Profile name')}
                   aria-label={t('Profile name')}
                   onChange={(e) => setWmName(e.target.value)}
@@ -413,7 +437,7 @@ export default function CreatorDetail({
                   >
                     {t('Create & assign')}
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={() => setWmCreating(false)}>
+                  <Button variant="ghost" onClick={() => setWmCreating(false)}>
                     {t('Cancel')}
                   </Button>
                 </div>

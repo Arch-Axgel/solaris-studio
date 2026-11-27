@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { api, errorText } from '../../lib/api'
 import { t } from '../../lib/i18n'
+import { Icon } from '../icons'
+import { IconButton } from '../ui'
 
 /** How a watched channel's clips go out: how many of each video's clips, how
  *  many a day, how far apart, and when each day's first one goes. */
@@ -30,6 +32,7 @@ export default function WatchSchedule({
   value: ScheduleValue
   onChange: (next: ScheduleValue) => void
 }): JSX.Element {
+  const firstPostId = useId()
   const [preview, setPreview] = useState<{ times: string[]; already: number } | string | null>(null)
   const set = (patch: Partial<ScheduleValue>): void => onChange({ ...value, ...patch })
 
@@ -50,11 +53,11 @@ export default function WatchSchedule({
 
   return (
     <div className="space-y-2">
-      <div className="flex gap-x-6 gap-y-3 flex-wrap items-end">
-        <label className="text-sm space-y-1">
+      <div className="ops-fields">
+        <label className="ops-field">
           <span className="label block">{t('Clips to post from each video')}</span>
           <select
-            className="input !w-36"
+            className="input"
             value={value.max_posts}
             onChange={(e) => set({ max_posts: Number(e.target.value) })}
           >
@@ -66,10 +69,10 @@ export default function WatchSchedule({
             ))}
           </select>
         </label>
-        <label className="text-sm space-y-1">
+        <label className="ops-field">
           <span className="label block">{t('When')}</span>
           <select
-            className="input !w-44"
+            className="input"
             value={value.spread ? 'spread' : 'now'}
             onChange={(e) => set({ spread: e.target.value === 'spread' })}
           >
@@ -79,53 +82,69 @@ export default function WatchSchedule({
         </label>
         {value.spread && (
           <>
-            <label className="text-sm space-y-1">
+            <label className="ops-field">
               <span className="label block">{t('Posts per day')}</span>
               <input
                 type="number"
                 min={1}
                 max={50}
-                className="input !w-24"
+                className="input"
                 value={value.per_day}
                 onChange={(e) =>
                   set({ per_day: Math.max(1, Math.min(50, Number(e.target.value) || 1)) })
                 }
               />
             </label>
-            <label className="text-sm space-y-1">
+            <label className="ops-field">
               <span className="label block">{t('Hours apart')}</span>
               <input
                 type="number"
                 min={0.25}
                 max={24}
                 step={0.25}
-                className="input !w-24"
+                className="input"
                 value={value.gap_hours}
                 onChange={(e) =>
                   set({ gap_hours: Math.max(0.25, Math.min(24, Number(e.target.value) || 1)) })
                 }
               />
             </label>
-            <label className="text-sm space-y-1">
-              <span className="label block">{t('First post of the day')}</span>
-              <span className="flex items-center gap-2">
-                <input
-                  type="time"
-                  className="input !w-32"
-                  value={value.day_start}
-                  onChange={(e) => set({ day_start: e.target.value })}
-                />
-                {value.day_start && (
-                  <button
-                    className="btn-ghost !px-2 !py-1 text-xs"
-                    onClick={() => set({ day_start: '' })}
-                    title={t('Start as soon as possible instead')}
-                  >
-                    {t('Any time')}
-                  </button>
-                )}
+            {/* No time set means "as soon as possible": said in words rather
+                than as an empty --:-- picker. */}
+            <div className="ops-field">
+              <span className="label block" id={firstPostId}>
+                {t('First post of the day')}
               </span>
-            </label>
+              {value.day_start ? (
+                <span className="flex items-center gap-1.5">
+                  <input
+                    type="time"
+                    className="input min-w-0 flex-1"
+                    aria-labelledby={firstPostId}
+                    value={value.day_start}
+                    onChange={(e) => set({ day_start: e.target.value })}
+                  />
+                  <IconButton
+                    size="sm"
+                    icon="x"
+                    label={t('Start as soon as possible instead')}
+                    onClick={() => set({ day_start: '' })}
+                  />
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  className="input ops-time-any"
+                  aria-describedby={firstPostId}
+                  title={t('Pick a time for the first post')}
+                  onClick={() => set({ day_start: '09:00' })}
+                >
+                  <Icon name="clock" size={14} />
+                  <span className="truncate">{t('As soon as possible')}</span>
+                </button>
+              )}
+            </div>
+
           </>
         )}
       </div>

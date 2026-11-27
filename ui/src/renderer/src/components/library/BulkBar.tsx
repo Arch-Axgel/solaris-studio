@@ -37,7 +37,7 @@ export default function BulkBar({
     if (ref.current) (ref.current as HTMLElement & { inert: boolean }).inert = !open
   }, [open])
   const publishBtn = (
-    <Button size="sm" variant="ghost" icon="send" onClick={onPublish} disabled={!onPublish || busy !== null}>
+    <Button size="sm" variant="ghost" icon="send" title={t('Publish')} onClick={onPublish} disabled={!onPublish || busy !== null}>
       {t('Publish')}
     </Button>
   )
@@ -59,7 +59,7 @@ export default function BulkBar({
         </span>
       </div>
       <span className="lib-bulkbar-sep" aria-hidden />
-      <Button size="sm" variant="accent" icon="download" onClick={onExport} loading={busy === 'export'} disabled={busy !== null}>
+      <Button size="sm" variant="accent" icon="download" title={t('Export')} onClick={onExport} loading={busy === 'export'} disabled={busy !== null}>
         {t('Export')}
       </Button>
       {onPublish ? publishBtn : (
@@ -72,7 +72,7 @@ export default function BulkBar({
       <Button size="sm" variant="ghost" icon="star" title={allExported ? t('Unmark as exported') : t('Mark as exported')} onClick={onMarkExported} loading={busy === 'mark'} disabled={busy !== null}>
         {allExported ? t('Unstar') : t('Star')}
       </Button>
-      <Button size="sm" variant="danger" icon="trash" onClick={onDelete} loading={busy === 'delete'} disabled={busy !== null}>
+      <Button size="sm" variant="danger" icon="trash" title={t('Delete')} onClick={onDelete} loading={busy === 'delete'} disabled={busy !== null}>
         {t('Delete')}
       </Button>
       <span className="lib-bulkbar-sep" aria-hidden />

@@ -43,6 +43,21 @@ function useMedia(query: string): boolean {
   return m
 }
 
+/** True while <html> carries data-<name> (e.g. data-edit-bay, set by the
+ *  Edit Bay). */
+function useHtmlFlag(attr: string): boolean {
+  const read = (): boolean => document.documentElement.hasAttribute(attr)
+  const [on, setOn] = useState(read)
+  useEffect(() => {
+    const mo = new MutationObserver(() => setOn(read()))
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: [attr] })
+    setOn(read())
+    return () => mo.disconnect()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attr])
+  return on
+}
+
 /** Channels being watched (live dot): 30s poll plus automation events. */
 function useWatching(): number {
   const [watching, setWatching] = useState(0)
@@ -206,24 +221,39 @@ export default function Rail(): JSX.Element {
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const watching = useWatching()
 
-  const docked = !narrow && prefs.railPinned
+  // The Edit Bay narrows the rail column to the collapsed width, so the rail
+  // must really collapse there (it can still float open over the bay).
+  const editBay = useHtmlFlag('data-edit-bay')
+  const docked = !narrow && !editBay && prefs.railPinned
   const expanded = docked || overlay || hovering
   const floating = expanded && !docked
 
+  // The footer button always does what its label says: a floating rail
+  // (opened by hover or by this button) closes; a pinned one unpins; a
+  // collapsed one opens (floating where there is no room to pin, else pinned).
   const toggle = useCallback((): void => {
-    if (narrow) setOverlay((o) => !o)
-    else {
+    if (floating) {
+      setOverlay(false)
       setHovering(false)
-      setPrefs({ railPinned: !prefs.railPinned })
+      return
     }
-  }, [narrow, prefs.railPinned, setPrefs])
-  useHotkey('ctrl+b', toggle)
+    if (docked) {
+      setPrefs({ railPinned: false })
+      return
+    }
+    if (narrow || editBay) setOverlay(true)
+    else setPrefs({ railPinned: true })
+  }, [floating, docked, narrow, editBay, setPrefs])
+  // Not while a full-window <Overlay> is open (html[data-overlay]): the rail is inert behind it.
+  useHotkey('ctrl+b', () => {
+    if (document.documentElement.dataset.overlay === undefined) toggle()
+  })
 
   // Close the overlay after navigating, and when the window widens.
   useEffect(() => {
     setOverlay(false)
     setHovering(false)
-  }, [route.page, narrow])
+  }, [route.page, narrow, editBay])
 
   const onEnter = (): void => {
     if (!prefs.railHover || docked) return
@@ -270,10 +300,31 @@ export default function Rail(): JSX.Element {
       const el = root.querySelector<HTMLElement>(`[data-nav="${route.page}"]`)
       setIndicator(el ? { y: el.offsetTop, h: el.offsetHeight } : null)
     }
+    // Keep the current page visible in the list on short windows (only the
+    // list scrolls: scrollIntoView would also move overflow:hidden parents).
+    // Re-run when the list box resizes: on a cold load the footer (AI model,
+    // health) fills in after this first pass and shrinks the list, which
+    // pushed e.g. Settings out of view at 1024x640.
+    const sc = scrollRef.current
+    const reveal = (): void => {
+      const item = root.querySelector<HTMLElement>(`[data-nav="${route.page}"]`)
+      if (!sc || !item || sc.scrollHeight <= sc.clientHeight) return
+      const top = item.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop
+      const bottom = top + item.offsetHeight
+      const pad = 28
+      if (top - pad < sc.scrollTop) sc.scrollTop = Math.max(0, top - pad)
+      else if (bottom + pad > sc.scrollTop + sc.clientHeight) sc.scrollTop = bottom + pad - sc.clientHeight
+    }
     measure()
+    reveal()
     const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null
     ro?.observe(root)
-    return () => ro?.disconnect()
+    const ro2 = sc && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(reveal) : null
+    if (sc) ro2?.observe(sc)
+    return () => {
+      ro?.disconnect()
+      ro2?.disconnect()
+    }
   }, [route.page, expanded])
 
   // Esc closes a floating rail.
@@ -316,6 +367,7 @@ export default function Rail(): JSX.Element {
 
         <CreateOrb expanded={expanded} />
 
+        <div className="rail-scroll-wrap">
         <div ref={scrollRef} className="rail-scroll" data-more={more}>
           <div ref={listRef} className="rail-list">
             {indicator && (
@@ -383,6 +435,34 @@ export default function Rail(): JSX.Element {
               </div>
             ))}
           </div>
+        </div>
+          {(more === 'above' || more === 'both') && (
+            <button
+              type="button"
+              className="rail-more rail-more-above"
+              tabIndex={-1}
+              aria-hidden
+              title={t('More pages above')}
+              onClick={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+            >
+              <Icon name="chevron-up" size={14} />
+            </button>
+          )}
+          {(more === 'below' || more === 'both') && (
+            <button
+              type="button"
+              className="rail-more rail-more-below"
+              tabIndex={-1}
+              aria-hidden
+              title={t('More pages below')}
+              onClick={() => {
+                const sc = scrollRef.current
+                sc?.scrollTo({ top: sc.scrollHeight, behavior: 'smooth' })
+              }}
+            >
+              <Icon name="chevron-down" size={14} />
+            </button>
+          )}
         </div>
 
         <div className="rail-foot">

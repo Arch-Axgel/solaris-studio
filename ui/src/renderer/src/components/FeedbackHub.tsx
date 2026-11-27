@@ -4,8 +4,8 @@ import { t } from '../lib/i18n'
 import type { Video } from '../lib/types'
 import { EV } from '../lib/nav'
 import NoClipsExplanation from './NoClipsExplanation'
-import { Bug, Bulb, Image as ImageIcon, TrendUp } from './icons'
-import { Dialog, Tooltip } from './ui'
+import { Bug, Bulb, Icon, Image as ImageIcon, TrendUp } from './icons'
+import { Button, Callout, Dialog, Tooltip } from './ui'
 
 /** Feedback Hub: report a bug / request a feature / suggest an improvement
  *  in plain language. Diagnostics (versions, hardware, AI model, log tail)
@@ -110,14 +110,15 @@ export default function FeedbackHub({ compact = false }: { compact?: boolean } =
     rows = 2,
     optional = false
   ): JSX.Element => (
-    <div key={key}>
-      <label htmlFor={`fb-${key}`} className="label">
+    <div key={key} className="fb-field">
+      <label htmlFor={`fb-${key}`} className="fb-q">
         {t(label)}
-        {!optional && <span className="text-gold"> *</span>}
+        {!optional && <span className="fb-req" aria-hidden> *</span>}
       </label>
       <textarea
         id={`fb-${key}`}
-        className="input mt-1 resize-none"
+        required={!optional}
+        className="input resize-y"
         rows={rows}
         placeholder={t(placeholder)}
         value={answers[key] ?? ''}
@@ -232,266 +233,296 @@ export default function FeedbackHub({ compact = false }: { compact?: boolean } =
         title={kind === null ? t('Feedback Hub') : t(KINDS.find((k) => k.id === kind)?.title ?? '')}
         size="lg"
         className="feedback-hub"
-      >
-          <div className="space-y-4">
-            {done ? (
-              <div className="space-y-4">
-                <p className="text-sm">{done}</p>
-                <button className="btn-accent" onClick={() => setOpen(false)}>
-                  {t('Close')}
-                </button>
-              </div>
-            ) : kind === null ? (
-              <div className="space-y-2">
-                <p className="text-sm text-muted">
-                  {t('Found a problem or have an idea? Tell us in plain words - technical details are collected automatically, and you don’t need an account for anything.')}
+        footer={
+          done ? (
+            <Button variant="accent" onClick={() => setOpen(false)}>
+              {t('Close')}
+            </Button>
+          ) : kind !== null ? (
+            <div className="fb-foot">
+              {!canSend && (
+                <p className="fb-missing" title={missing.length > 0 ? missing.map((m) => t(m)).join(", ") : undefined}>
+                  <Icon name="info" size={14} />
+                  <span>
+                    {missing.length > 0
+                      ? `${t('Still needed:')} ${missing.map((m) => t(m)).join(', ')}`
+                      : t('Describe what happened in a bit more detail (a few words is enough)')}
+                  </span>
                 </p>
-                {KINDS.map((k) => (
-                  <button
-                    key={k.id}
-                    className="w-full text-left bg-abyss/60 border border-line/60 hover:border-gold/50 hover:bg-raised/60 rounded-xl px-4 py-3 transition-colors flex items-center gap-3 lift"
-                    onClick={() => setKind(k.id)}
+              )}
+              <div className="fb-foot-btns">
+                <Button variant="ghost" icon="arrow-left" onClick={reset} disabled={busy}>
+                  {t('Back')}
+                </Button>
+                <Button
+                  variant="accent"
+                  icon="send"
+                  onClick={submit}
+                  disabled={!canSend}
+                  loading={busy}
+                  title={!canSend ? t('Answer every required (*) question first') : undefined}
+                >
+                  {busy ? t('Sending…') : t('Send feedback')}
+                </Button>
+              </div>
+            </div>
+          ) : undefined
+        }
+      >
+        {done ? (
+          <div className="fb-done anim-rise" role="status">
+            <span className="fb-done-mark" aria-hidden>
+              <Icon name="check" size={22} />
+            </span>
+            <p className="text-sm text-ink leading-relaxed">{done}</p>
+          </div>
+        ) : kind === null ? (
+          <div className="fb-chooser">
+            <p className="text-sm text-muted leading-relaxed">
+              {t('Found a problem or have an idea? Tell us in plain words - technical details are collected automatically, and you don’t need an account for anything.')}
+            </p>
+            <div className="fb-kinds stagger">
+              {KINDS.map((k, i) => (
+                <button
+                  key={k.id}
+                  type="button"
+                  className="fb-kind"
+                  style={{ '--i': i } as React.CSSProperties}
+                  onClick={() => setKind(k.id)}
+                >
+                  <span className="fb-kind-icon" aria-hidden>
+                    {k.icon}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="fb-kind-title">{t(k.title)}</span>
+                    <span className="fb-kind-blurb">{t(k.blurb)}</span>
+                  </span>
+                  <Icon name="chevron-right" size={16} className="fb-kind-chev" />
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="fb-form" key={kind}>
+            {kind === 'bug' && (
+              <>
+                <div className="fb-field">
+                  <label htmlFor="fb-video" className="fb-q">
+                    {t('Which video were you processing?')}
+                    <span className="fb-req" aria-hidden> *</span>
+                  </label>
+                  <select
+                    id="fb-video"
+                    className="input"
+                    required
+                    value={videoId}
+                    onChange={(e) => {
+                      setVideoId(e.target.value)
+                      const v = videos.find((x) => x.video_id === e.target.value)
+                      set('source', v ? `${v.title} (${v.video_id})` : '')
+                    }}
                   >
-                    <span className="text-gold" aria-hidden>
-                      {k.icon}
-                    </span>
-                    <span>
-                      <span className="font-medium block">{t(k.title)}</span>
-                      <span className="text-xs text-muted">{t(k.blurb)}</span>
-                    </span>
+                    <option value="">{t('Choose the video…')}</option>
+                    {videos.map((v) => (
+                      <option key={v.video_id} value={v.video_id}>
+                        {v.title || v.video_id} — {v.clip_count} {t('clips')}
+                      </option>
+                    ))}
+                    <option value="__other__">{t('Something else / not listed')}</option>
+                  </select>
+                </div>
+                {videoId === '__other__' &&
+                  field(
+                    'source',
+                    'Which video was it?',
+                    'e.g. https://twitch.tv/videos/123456  —  or "local file, 40 min talking head"'
+                  )}
+
+                {zeroClipOutcome && (
+                  <div className="space-y-2">
+                    <NoClipsExplanation outcome={zeroClipOutcome} />
+                    <p className="text-xs text-muted">
+                      {t(
+                        'If that explains it, you can close this - nothing is wrong. If it does not match what you saw, please do carry on and tell us.'
+                      )}
+                    </p>
+                  </div>
+                )}
+                {field('trying', 'What were you trying to do?', 'e.g. Export a clip of my Twitch stream')}
+                {field('happened', 'What happened?', 'e.g. The export button froze the whole app')}
+                {field('expected', 'What did you expect to happen?', 'e.g. The clip saves to my Downloads')}
+                <div className="fb-pair">
+                  <div className="fb-field">
+                    <label className="fb-q" htmlFor="fb-repro">
+                      {t('Can you make it happen again?')}
+                      <span className="fb-req" aria-hidden> *</span>
+                    </label>
+                    <select
+                      id="fb-repro"
+                      className="input"
+                      required
+                      value={answers.repro ?? ''}
+                      onChange={(e) => set('repro', e.target.value)}
+                    >
+                      <option value="" disabled>
+                        {t('Choose…')}
+                      </option>
+                      <option>{t('Always')}</option>
+                      <option>{t('Sometimes')}</option>
+                      <option>{t('Only once')}</option>
+                      <option>{t('Not sure')}</option>
+                    </select>
+                  </div>
+                  <div className="fb-field">
+                    <label className="fb-q" htmlFor="fb-sev">
+                      {t('How serious is it?')}
+                      <span className="fb-req" aria-hidden> *</span>
+                    </label>
+                    <select
+                      id="fb-sev"
+                      className="input"
+                      required
+                      value={answers.severity ?? ''}
+                      onChange={(e) => set('severity', e.target.value)}
+                    >
+                      <option value="" disabled>
+                        {t('Choose…')}
+                      </option>
+                      <option value="low">{t('Low - cosmetic')}</option>
+                      <option value="medium">{t('Medium')}</option>
+                      <option value="high">{t('High - blocks my work')}</option>
+                      <option value="critical">{t('Critical - app unusable')}</option>
+                    </select>
+                  </div>
+                </div>
+                {field('notes', 'Anything else? (optional)', 'Anything that seems related', 2, true)}
+              </>
+            )}
+            {kind === 'feature' && (
+              <>
+                {field('what', 'What feature would you like?', 'e.g. Auto-post finished clips to TikTok')}
+                {field('why', 'Why would it be useful?', 'What problem would it solve for you?')}
+                {field('workflow', 'How would it fit your workflow?', 'e.g. After a stream I always…')}
+                <div className="fb-pair">
+                  <div className="fb-field">
+                    <label className="fb-q" htmlFor="fb-imp">
+                      {t('How important is this to you?')}
+                      <span className="fb-req" aria-hidden> *</span>
+                    </label>
+                    <select
+                      id="fb-imp"
+                      className="input"
+                      required
+                      value={answers.importance ?? ''}
+                      onChange={(e) => set('importance', e.target.value)}
+                    >
+                      <option value="" disabled>
+                        {t('Choose…')}
+                      </option>
+                      <option>{t('Nice to have')}</option>
+                      <option>{t('Would use it weekly')}</option>
+                      <option>{t('Would use it every video')}</option>
+                      <option>{t('Can’t use the app well without it')}</option>
+                    </select>
+                  </div>
+                </div>
+              </>
+            )}
+            {kind === 'improvement' && (
+              <>
+                {field('what', 'What would you like improved?', 'e.g. The timeline is hard to use with a trackpad')}
+                {field('why', 'Why would it improve Solaris Studio?', 'What gets easier or faster?')}
+                {field('inspiration', 'Which app inspired this? (optional)', 'e.g. CapCut’s keyframe editor', 2, true)}
+                {field('links', 'Links / screenshots of that feature (optional)', 'A YouTube video, docs page…', 2, true)}
+              </>
+            )}
+
+            <fieldset className="fb-field">
+              <legend className="fb-q">{t('Which part of the app is this about? (optional)')}</legend>
+              <div className="fb-chips">
+                {AREAS.map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    className="lyr-chip"
+                    aria-pressed={areas.includes(id)}
+                    onClick={() =>
+                      setAreas((a) => (a.includes(id) ? a.filter((x) => x !== id) : [...a, id].slice(0, 4)))
+                    }
+                    title={label}
+                  >
+                    {areas.includes(id) && <Icon name="check" size={13} />}
+                    {t(label)}
                   </button>
                 ))}
               </div>
-            ) : (
-              <div className="space-y-3">
-                {kind === 'bug' && (
-                  <>
-                    <div>
-                      <label htmlFor="fb-video" className="label">
-                        {t('Which video were you processing?')}
-                        <span className="text-gold"> *</span>
-                      </label>
-                      <select
-                        id="fb-video"
-                        className="input mt-1"
-                        value={videoId}
-                        onChange={(e) => {
-                          setVideoId(e.target.value)
-                          const v = videos.find((x) => x.video_id === e.target.value)
-                          set('source', v ? `${v.title} (${v.video_id})` : '')
-                        }}
-                      >
-                        <option value="">{t('Choose the video…')}</option>
-                        {videos.map((v) => (
-                          <option key={v.video_id} value={v.video_id}>
-                            {v.title || v.video_id} — {v.clip_count} {t('clips')}
-                          </option>
-                        ))}
-                        <option value="__other__">{t('Something else / not listed')}</option>
-                      </select>
-                    </div>
-                    {videoId === '__other__' &&
-                      field(
-                        'source',
-                        'Which video was it?',
-                        'e.g. https://twitch.tv/videos/123456  —  or "local file, 40 min talking head"'
-                      )}
+            </fieldset>
 
-                    {zeroClipOutcome && (
-                      <div className="space-y-2">
-                        <NoClipsExplanation outcome={zeroClipOutcome} />
-                        <p className="text-[11px] text-muted">
-                          {t(
-                            'If that explains it, you can close this - nothing is wrong. If it does not match what you saw, please do carry on and tell us.'
-                          )}
-                        </p>
-                      </div>
-                    )}
-                    {field('trying', 'What were you trying to do?', 'e.g. Export a clip of my Twitch stream')}
-                    {field('happened', 'What happened?', 'e.g. The export button froze the whole app')}
-                    {field('expected', 'What did you expect to happen?', 'e.g. The clip saves to my Downloads')}
-                    <div className="flex gap-3 flex-wrap">
-                      <div>
-                        <label className="label" htmlFor="fb-repro">
-                          {t('Can you make it happen again?')}<span className="text-gold"> *</span>
-                        </label>
-                        <select
-                          id="fb-repro"
-                          className="input mt-1 !w-40"
-                          value={answers.repro ?? ''}
-                          onChange={(e) => set('repro', e.target.value)}
-                        >
-                          <option value="" disabled>
-                            {t('Choose…')}
-                          </option>
-                          <option>{t('Always')}</option>
-                          <option>{t('Sometimes')}</option>
-                          <option>{t('Only once')}</option>
-                          <option>{t('Not sure')}</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="label" htmlFor="fb-sev">
-                          {t('How serious is it?')}<span className="text-gold"> *</span>
-                        </label>
-                        <select
-                          id="fb-sev"
-                          className="input mt-1 !w-44"
-                          value={answers.severity ?? ''}
-                          onChange={(e) => set('severity', e.target.value)}
-                        >
-                          <option value="" disabled>
-                            {t('Choose…')}
-                          </option>
-                          <option value="low">{t('Low - cosmetic')}</option>
-                          <option value="medium">{t('Medium')}</option>
-                          <option value="high">{t('High - blocks my work')}</option>
-                          <option value="critical">{t('Critical - app unusable')}</option>
-                        </select>
-                      </div>
-                    </div>
-                    {field('notes', 'Anything else? (optional)', 'Anything that seems related', 2, true)}
-                  </>
-                )}
-                {kind === 'feature' && (
-                  <>
-                    {field('what', 'What feature would you like?', 'e.g. Auto-post finished clips to TikTok')}
-                    {field('why', 'Why would it be useful?', 'What problem would it solve for you?')}
-                    {field('workflow', 'How would it fit your workflow?', 'e.g. After a stream I always…')}
-                    <div>
-                      <label className="label" htmlFor="fb-imp">
-                        {t('How important is this to you?')}<span className="text-gold"> *</span>
-                      </label>
-                      <select
-                        id="fb-imp"
-                        className="input mt-1 !w-52"
-                        value={answers.importance ?? ''}
-                        onChange={(e) => set('importance', e.target.value)}
-                      >
-                        <option value="" disabled>
-                          {t('Choose…')}
-                        </option>
-                        <option>{t('Nice to have')}</option>
-                        <option>{t('Would use it weekly')}</option>
-                        <option>{t('Would use it every video')}</option>
-                        <option>{t('Can’t use the app well without it')}</option>
-                      </select>
-                    </div>
-                  </>
-                )}
-                {kind === 'improvement' && (
-                  <>
-                    {field('what', 'What would you like improved?', 'e.g. The timeline is hard to use with a trackpad')}
-                    {field('why', 'Why would it improve Solaris Studio?', 'What gets easier or faster?')}
-                    {field('inspiration', 'Which app inspired this? (optional)', 'e.g. CapCut’s keyframe editor', 2, true)}
-                    {field('links', 'Links / screenshots of that feature (optional)', 'A YouTube video, docs page…', 2, true)}
-                  </>
-                )}
-
-                <div>
-                  <p className="label mb-1">{t('Which part of the app is this about? (optional)')}</p>
-                  <div className="flex gap-1.5 flex-wrap">
-                    {AREAS.map(([id, label]) => (
-                      <button
-                        key={id}
-                        className={`px-2.5 py-1 rounded-full text-xs border ${
-                          areas.includes(id)
-                            ? 'border-gold/60 text-gold-strong bg-accent/20'
-                            : 'border-line text-muted hover:border-gold/40 hover:text-ink'
-                        }`}
-                        onClick={() =>
-                          setAreas((a) => (a.includes(id) ? a.filter((x) => x !== id) : [...a, id].slice(0, 4)))
-                        }
-                        title={label}
-                      >
-                        {t(label)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 flex-wrap text-sm">
+            <div className="fb-shots">
+              <Button
+                size="sm"
+                variant="ghost"
+                icon="image"
+                onClick={async () => {
+                  const p = await window.studio.pickImageFile()
+                  if (p) setImages((im) => [...im, p].slice(0, 3))
+                }}
+                disabled={images.length >= 3}
+              >
+                {t('Attach screenshot')} ({images.length}/3)
+              </Button>
+              {images.map((p, i) => (
+                <span key={i} className="fb-shot">
+                  <ImageIcon size={13} />
+                  <span className="truncate">{p.split(/[\\/]/).pop()}</span>
                   <button
-                    className="btn-ghost !py-1.5 text-xs"
-                    onClick={async () => {
-                      const p = await window.studio.pickImageFile()
-                      if (p) setImages((im) => [...im, p].slice(0, 3))
-                    }}
-                    disabled={images.length >= 3}
+                    type="button"
+                    className="fb-shot-x"
+                    onClick={() => setImages((im) => im.filter((_, j) => j !== i))}
+                    aria-label={t('Remove screenshot')}
                   >
-                    <ImageIcon className="mr-1.5" /> {t('Attach screenshot')} ({images.length}/3)
+                    <Icon name="x" size={12} />
                   </button>
-                  {images.map((p, i) => (
-                    <span key={i} className="text-xs text-muted bg-raised border border-line/60 rounded-full px-2 py-0.5">
-                      {p.split(/[\\/]/).pop()}{' '}
-                      <button
-                        className="hover:text-error"
-                        onClick={() => setImages((im) => im.filter((_, j) => j !== i))}
-                        aria-label="Remove screenshot"
-                      >
-                        ✕
-                      </button>
-                    </span>
-                  ))}
-                </div>
+                </span>
+              ))}
+            </div>
 
-                <div className="border-t border-line/60 pt-3 space-y-2">
-                  <label className="flex items-center gap-2 cursor-pointer text-sm">
-                    <input
-                      type="checkbox"
-                      className="size-4 accent-accent-strong"
-                      checked={includeDiag}
-                      onChange={(e) => setIncludeDiag(e.target.checked)}
-                    />
-                    {t('Include technical details (PC specs, app version, AI model, recent log) - this is what lets someone actually fix it')}
-                  </label>
-                  {includeDiag && (
-                    <button
-                      className="text-xs text-gold hover:underline"
-                      onClick={async () => {
-                        if (diagPreview) {
-                          setDiagPreview(null)
-                          return
-                        }
-                        const d = await api.feedbackDiagnostics(realVideoId())
-                        setDiagPreview(JSON.stringify(d, null, 2))
-                      }}
-                    >
-                      {diagPreview ? t('Hide what will be shared') : t('See exactly what will be shared')}
-                    </button>
-                  )}
-                  {diagPreview && (
-                    <pre className="bg-base border border-line/60 rounded-lg p-2 text-[10px] max-h-48 overflow-auto whitespace-pre-wrap">
-                      {diagPreview}
-                    </pre>
-                  )}
-                </div>
+            <div className="fb-diag">
+              <label className="fb-diag-check">
+                <input type="checkbox" checked={includeDiag} onChange={(e) => setIncludeDiag(e.target.checked)} />
+                <span>
+                  {t('Include technical details (PC specs, app version, AI model, recent log) - this is what lets someone actually fix it')}
+                </span>
+              </label>
+              {includeDiag && (
+                <Button
+                  size="sm"
+                  variant="subtle"
+                  icon="eye"
+                  className="fb-diag-peek"
+                  aria-expanded={!!diagPreview}
+                  onClick={async () => {
+                    if (diagPreview) {
+                      setDiagPreview(null)
+                      return
+                    }
+                    const d = await api.feedbackDiagnostics(realVideoId())
+                    setDiagPreview(JSON.stringify(d, null, 2))
+                  }}
+                >
+                  {diagPreview ? t('Hide what will be shared') : t('See exactly what will be shared')}
+                </Button>
+              )}
+              {diagPreview && <pre className="fb-diag-pre anim-fade">{diagPreview}</pre>}
+            </div>
 
-                {error && <p className="text-sm text-error">{error}</p>}
-
-                <div className="flex gap-3 justify-end items-center">
-                  {!canSend && (
-                    <p className="text-xs text-muted flex-1">
-                      {missing.length > 0
-                        ? `${t('Still needed:')} ${missing.map((m) => t(m)).join(', ')}`
-                        : 'Describe what happened in a bit more detail (a few words is enough)'}
-                    </p>
-                  )}
-                  <button className="btn-ghost shrink-0" onClick={reset} disabled={busy}>
-                    {t('Back')}
-                  </button>
-                  <button
-                    className="btn-accent shrink-0"
-                    onClick={submit}
-                    disabled={!canSend || busy}
-                    title={!canSend ? 'Answer every required (*) question first' : undefined}
-                  >
-                    {busy ? t('Sending…') : t('Send feedback')}
-                  </button>
-                </div>
-              </div>
+            {error && (
+              <Callout tone="error" title={t('Couldn’t send that')}>
+                {error}
+              </Callout>
             )}
           </div>
+        )}
       </Dialog>
     </>
   )

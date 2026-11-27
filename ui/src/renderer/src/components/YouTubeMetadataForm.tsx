@@ -18,6 +18,31 @@ import {
  *  worse than not having one. The panel links to Studio for them instead.
  */
 
+/** YouTube's standard assignable categories, the same in every region the
+ *  app is used in. Offered when the live list cannot be fetched, so the
+ *  picker never sits on "Loading…" and an upload can still go out. */
+const FALLBACK_CATEGORIES: VideoCategory[] = [
+  { id: '1', title: 'Film & Animation' },
+  { id: '2', title: 'Autos & Vehicles' },
+  { id: '10', title: 'Music' },
+  { id: '15', title: 'Pets & Animals' },
+  { id: '17', title: 'Sports' },
+  { id: '19', title: 'Travel & Events' },
+  { id: '20', title: 'Gaming' },
+  { id: '22', title: 'People & Blogs' },
+  { id: '23', title: 'Comedy' },
+  { id: '24', title: 'Entertainment' },
+  { id: '25', title: 'News & Politics' },
+  { id: '26', title: 'Howto & Style' },
+  { id: '27', title: 'Education' },
+  { id: '28', title: 'Science & Technology' },
+  { id: '29', title: 'Nonprofits & Activism' }
+]
+
+/** How long the live category list may take before the standard list is
+ *  shown instead. */
+const CATEGORY_TIMEOUT_MS = 8000
+
 export interface Metadata {
   title: string
   description: string
@@ -73,21 +98,46 @@ export default function YouTubeMetadataForm({
   disabled
 }: Props): JSX.Element {
   const [categories, setCategories] = useState<VideoCategory[]>([])
+  const [categoryState, setCategoryState] = useState<'loading' | 'ready' | 'failed'>('loading')
+  const [categoryTry, setCategoryTry] = useState(0)
   const [playlists, setPlaylists] = useState<Playlist[]>([])
   const [tagText, setTagText] = useState(value.tags.join(', '))
 
   useEffect(() => {
     let alive = true
+    setCategoryState('loading')
+    // A request that never answers is treated like one that failed: the
+    // standard list goes up, with a retry, instead of "Loading…" forever.
+    const fail = (): void => {
+      if (!alive) return
+      alive = false
+      setCategories(FALLBACK_CATEGORIES)
+      setCategoryState('failed')
+    }
+    const timer = window.setTimeout(fail, CATEGORY_TIMEOUT_MS)
     api
       .youtubeCategories(region)
-      .then((r) => alive && setCategories(r.categories))
-      .catch(() => {
-        /* the default category still works; no need to shout */
+      .then((r) => {
+        if (!alive) return
+        if (!r.categories?.length) return fail()
+        alive = false
+        setCategories(r.categories)
+        setCategoryState('ready')
       })
+      .catch(fail)
+      .finally(() => window.clearTimeout(timer))
     return () => {
       alive = false
+      window.clearTimeout(timer)
     }
-  }, [region])
+  }, [region, categoryTry])
+
+  // The clip's saved category stays pickable even when the list in hand
+  // (the standard one, say) does not name it.
+  const categoryOptions =
+    categories.length && !categories.some((c) => c.id === value.category_id)
+      ? [{ id: value.category_id, title: `${t('Category')} ${value.category_id}` }, ...categories]
+      : categories
 
   useEffect(() => {
     if (!playlistsAvailable) return
@@ -195,15 +245,35 @@ export default function YouTubeMetadataForm({
             className="input"
             value={value.category_id}
             disabled={disabled}
+            aria-busy={categoryState === 'loading' || undefined}
             onChange={(e) => onChange({ category_id: e.target.value })}
           >
-            {categories.length === 0 && <option value={value.category_id}>{t('Loading…')}</option>}
-            {categories.map((c) => (
+            {categoryState === 'loading' && categories.length === 0 && (
+              <option value={value.category_id}>{t('Loading…')}</option>
+            )}
+            {categoryOptions.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.title}
               </option>
             ))}
           </select>
+          {categoryState === 'loading' && categoryTry > 0 && (
+            <p className="text-[11px] text-muted mt-1 min-h-6 flex items-center" role="status">
+              {t('Trying YouTube’s list again…')}
+            </p>
+          )}
+          {categoryState === 'failed' && (
+            <p className="text-[11px] text-muted mt-1" role="status">
+              {t("Couldn't load YouTube's list, so these are the standard categories.")}{' '}
+              <button
+                type="button"
+                className="inline-flex min-h-6 items-center text-gold hover:text-gold-strong underline underline-offset-2"
+                onClick={() => setCategoryTry((n) => n + 1)}
+              >
+                {t('Try again')}
+              </button>
+            </p>
+          )}
         </div>
         <div>
           <label className="label" htmlFor="yt-language">

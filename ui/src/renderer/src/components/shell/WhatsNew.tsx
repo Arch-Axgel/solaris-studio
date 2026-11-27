@@ -4,7 +4,7 @@ import { celebrate } from '../../lib/motion'
 import { openLayer, topLayer, useLayer } from '../../lib/nav'
 import { setupDone } from '../SetupWizard'
 import { Icon, type IconName } from '../icons'
-import { Button, Dialog, Kbd } from '../ui'
+import { Button, Dialog, IconButton, Kbd } from '../ui'
 
 /** What's new (spec 4.17): five cards, shown once on the first launch after
  *  the redesign, never before the SetupWizard has finished. Re-openable from
@@ -31,7 +31,7 @@ const CARDS: CardDef[] = [
     icon: 'plus',
     eyebrow: 'Make clips from anywhere',
     title: 'New clips is a sheet, and a page',
-    body: 'Press the gold orb or Ctrl+N on any page to paste links without leaving what you were doing. The full Create page is still in the sidebar.',
+    body: 'Press New clips at the top of the sidebar, or the keys below, on any page to paste links without leaving what you were doing. The full Create page is still in the sidebar.',
     keys: ['Ctrl', 'N']
   },
   {
@@ -47,7 +47,7 @@ const CARDS: CardDef[] = [
     body: 'The Queue has a single switch to pause or start it. Drag videos to change their order.'
   },
   {
-    icon: 'command',
+    icon: 'search',
     eyebrow: 'Everything, one search away',
     title: 'Ctrl+K reaches everything',
     body: 'Jump to any page or setting, find a clip or creator by name, paste a link to start it, or run an action such as Pause queue.',
@@ -143,11 +143,27 @@ export default function WhatsNew(): JSX.Element | null {
           <span className="lyr-new-badge t-micro">{t('New')}</span>
         </div>
 
-        <div className="lyr-new-copy" key={`c${i}`} data-dir={dir} aria-live="polite">
-          <p className="t-micro text-foil">{t(card.eyebrow)}</p>
-          <h2 className="t-xl text-ink">{t(card.title)}</h2>
-          <p className="text-sm text-muted leading-relaxed">{t(card.body)}</p>
-          {card.keys && <Kbd keys={card.keys} className="lyr-new-kbd" />}
+        {/* Every card's copy is laid out invisibly in the same cell, so the
+            box is as tall as the longest card: no empty band on short cards
+            and no jump in height while paging. */}
+        <div className="lyr-new-copies">
+          {CARDS.map((c, n) =>
+            n === i ? (
+              <div className="lyr-new-copy" key={`c${i}`} data-dir={dir} aria-live="polite">
+                <p className="t-micro text-foil">{t(c.eyebrow)}</p>
+                <h2 className="t-xl text-ink">{t(c.title)}</h2>
+                <p className="text-sm text-muted leading-relaxed">{t(c.body)}</p>
+                {c.keys && <Kbd keys={c.keys} className="lyr-new-kbd" />}
+              </div>
+            ) : (
+              <div className="lyr-new-copy lyr-new-sizer" key={`s${n}`} aria-hidden>
+                <p className="t-micro">{t(c.eyebrow)}</p>
+                <h2 className="t-xl">{t(c.title)}</h2>
+                <p className="text-sm leading-relaxed">{t(c.body)}</p>
+                {c.keys && <Kbd keys={c.keys} className="lyr-new-kbd" />}
+              </div>
+            )
+          )}
         </div>
 
         <div className="lyr-new-nav">
@@ -165,15 +181,12 @@ export default function WhatsNew(): JSX.Element | null {
             ))}
           </div>
           <div className="lyr-new-btns">
-            {i > 0 ? (
-              <Button variant="ghost" size="sm" icon="arrow-left" onClick={() => go(i - 1)}>
-                {t('Back')}
-              </Button>
-            ) : (
-              <Button variant="ghost" size="sm" onClick={close}>
+            {!last && (
+              <Button variant="subtle" size="sm" onClick={close}>
                 {t('Skip')}
               </Button>
             )}
+            {i > 0 && <IconButton size="sm" icon="arrow-left" label={t('Back')} onClick={() => go(i - 1)} />}
             {last ? (
               <>
                 <Button

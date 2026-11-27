@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../lib/api'
+import { t } from '../lib/i18n'
 import type {
   CaptionLine,
   CaptionStyle,
@@ -17,6 +18,7 @@ import type {
 import FeatureBoundary from './FeatureBoundary'
 import GamingLayoutEditor from './GamingLayoutEditor'
 import EditSuggestions from './EditSuggestions'
+import { Overlay } from './ui/Overlay'
 import {
   ADDED,
   ALREADY,
@@ -59,6 +61,7 @@ import {
   TrimEnd,
   TrimStart,
   Undo as UndoIcon,
+  X as XIcon,
   YouTube as YouTubeIcon,
   Zap
 } from './icons'
@@ -622,7 +625,7 @@ export default function TimelineEditor({
     const step = steps.find((s) => s * pxPerSec >= 70) ?? 300
     const ticks: number[] = []
     for (let t = 0; t <= duration - step * 0.3; t += step) ticks.push(Number(t.toFixed(2)))
-    return { step, ticks }
+    return { step, ticks, pxPerSec }
   }, [scrollW, zoom, duration])
 
   const fmtTick = (t: number): string =>
@@ -1090,6 +1093,38 @@ export default function TimelineEditor({
     [ytEnabled, publishReady]
   )
 
+  // The tab strip scrolls sideways when the panel is narrow. Fade the edge
+  // that has more tabs past it, and keep the chosen tab in view.
+  const tabsRef = useRef<HTMLDivElement>(null)
+  const markTabEdges = (): void => {
+    const el = tabsRef.current
+    if (!el) return
+    const more = el.scrollWidth - el.clientWidth
+    el.toggleAttribute('data-more-left', el.scrollLeft > 2)
+    el.toggleAttribute('data-more-right', more > 2 && el.scrollLeft < more - 2)
+  }
+  useEffect(() => {
+    const el = tabsRef.current
+    if (!el) return
+    markTabEdges()
+    const ro = new ResizeObserver(markTabEdges)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [tabs.length])
+  useEffect(() => {
+    const el = tabsRef.current
+    const tab = el?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+    if (!el || !tab) return
+    const pad = 28
+    // From rects, not offsetLeft: the sticky strip is the tabs' offsetParent,
+    // so subtracting its own offsetLeft under-scrolled and left the last tab cut.
+    const left = tab.getBoundingClientRect().left - el.getBoundingClientRect().left + el.scrollLeft
+    if (left - pad < el.scrollLeft) el.scrollLeft = Math.max(0, left - pad)
+    else if (left + tab.offsetWidth + pad > el.scrollLeft + el.clientWidth)
+      el.scrollLeft = left + tab.offsetWidth + pad - el.clientWidth
+    markTabEdges()
+  }, [activeTab])
+
   /** The render options Apply edits would send.
    *
    *  Publishing calls this exact function rather than rebuilding the object,
@@ -1364,27 +1399,23 @@ export default function TimelineEditor({
   return (
     <div className="card space-y-3">
       {showKeys && (
-        <div
-          className="fixed inset-0 z-50 bg-base/80 backdrop-blur-sm flex items-center justify-center p-6"
-          onClick={() => setShowKeys(false)}
-          role="dialog"
-          aria-modal="true"
-          aria-label="Keyboard shortcuts"
-        >
+        // Top-layer modal: the Edit Bay panel's transform would otherwise trap
+        // a fixed overlay inside the panel. Esc is also handled by onKey above.
+        <Overlay onClose={() => setShowKeys(false)} label={t('Keyboard shortcuts')} className="p-6">
           <div
             className="card !rounded-2xl !p-5 border-line w-full max-w-md shadow-2xl max-h-[85vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-3">
               <p className="font-semibold text-ink inline-flex items-center gap-2">
-                <Keyboard size={16} className="text-gold" /> Keyboard shortcuts
+                <Keyboard size={16} className="text-gold" /> {t('Keyboard shortcuts')}
               </p>
               <button
-                className="text-muted hover:text-gold-strong text-lg leading-none px-1"
+                className="bay-tool bay-tool-icon !w-8 !h-8"
                 onClick={() => setShowKeys(false)}
                 aria-label="Close"
               >
-                ✕
+                <XIcon size={16} />
               </button>
             </div>
             <dl className="text-sm space-y-1.5">
@@ -1404,7 +1435,7 @@ export default function TimelineEditor({
                 ] as const
               ).map(([k, what]) => (
                 <div key={k} className="flex items-center gap-3">
-                  <dt className="shrink-0">
+                  <dt className="shrink-0 w-[5.5rem]">
                     <kbd className="bg-raised text-ink border border-line/80 rounded px-1.5 py-0.5 text-xs font-mono">
                       {k}
                     </kbd>
@@ -1413,28 +1444,29 @@ export default function TimelineEditor({
                 </div>
               ))}
             </dl>
-            <p className="text-[11px] text-muted/70 mt-3">
+            <p className="text-[11px] text-muted mt-3">
               Shortcuts are ignored while you&apos;re typing in a text field.
             </p>
           </div>
-        </div>
+        </Overlay>
       )}
 
       <div className="flex items-center justify-between">
         <p className="font-medium text-sm inline-flex items-center gap-1.5">
           <Film size={15} /> Edit video
         </p>
-        <div className="flex gap-3 text-xs items-center">
+        <div className="flex gap-1 items-center">
+          {/* Icon only: the bay header carries the labelled shortcuts chip. */}
           <button
-            className="text-muted hover:text-ink inline-flex items-center gap-1.5"
+            className="bay-tool bay-tool-icon"
             onClick={() => setShowKeys(true)}
             title="Keyboard shortcuts (?)"
             aria-label="Show keyboard shortcuts"
           >
-            <Keyboard /> Shortcuts
+            <Keyboard />
           </button>
           <button
-            className="text-muted hover:text-ink disabled:opacity-40 inline-flex items-center gap-1.5"
+            className="bay-tool"
             disabled={history.length === 0}
             onClick={undo}
             title="Undo (Ctrl+Z)"
@@ -1442,7 +1474,8 @@ export default function TimelineEditor({
             <UndoIcon /> Undo
           </button>
           <button
-            className="text-muted hover:text-error"
+            className="bay-tool bay-tool-danger"
+            title="Drop every change made here since the clip was opened"
             onClick={() => {
               push(defaultEdit(duration))
               setLayout('track')
@@ -1489,7 +1522,7 @@ export default function TimelineEditor({
             Timeline · Ctrl+scroll to zoom{zoom > 1 ? ' · scroll to move around' : ''}
           </span>
           <button
-            className="bg-raised border border-line/60 w-6 h-6 rounded hover:border-gold/40 hover:text-gold-strong transition-colors disabled:opacity-40 leading-none"
+            className="bg-raised border border-line/60 w-7 h-7 rounded-md hover:border-gold/40 hover:text-gold-strong transition-colors disabled:opacity-40 leading-none"
             onClick={() => zoomTo(zoom / 1.5)}
             disabled={zoom <= 1}
             title="Zoom out (−)"
@@ -1499,7 +1532,7 @@ export default function TimelineEditor({
           </button>
           <span className="text-muted tabular-nums w-9 text-center">{zoom.toFixed(1)}×</span>
           <button
-            className="bg-raised border border-line/60 w-6 h-6 rounded hover:border-gold/40 hover:text-gold-strong transition-colors disabled:opacity-40 leading-none"
+            className="bg-raised border border-line/60 w-7 h-7 rounded-md hover:border-gold/40 hover:text-gold-strong transition-colors disabled:opacity-40 leading-none"
             onClick={() => zoomTo(zoom * 1.5)}
             disabled={zoom >= MAX_ZOOM}
             title="Zoom in (+)"
@@ -1508,7 +1541,7 @@ export default function TimelineEditor({
             +
           </button>
           <button
-            className="bg-raised border border-line/60 px-2 h-6 rounded hover:border-gold/40 hover:text-gold-strong transition-colors disabled:opacity-40"
+            className="bg-raised border border-line/60 px-2.5 h-7 rounded-md hover:border-gold/40 hover:text-gold-strong transition-colors disabled:opacity-40"
             onClick={() => zoomTo(1)}
             disabled={zoom <= 1}
             title="Fit the whole clip in view"
@@ -1535,14 +1568,23 @@ export default function TimelineEditor({
           >
             {/* time ruler */}
             <div className="absolute top-0 inset-x-0 h-4 border-b border-line/40 pointer-events-none">
-              {ruler.ticks.map((t) => (
-                <div key={t} className="absolute top-0 h-full" style={{ left: pct(t) }}>
-                  <div className="absolute bottom-0 left-0 w-px h-1.5 bg-muted/60" />
-                  <span className="absolute top-0 left-1 text-[9px] leading-4 text-muted/80 tabular-nums whitespace-nowrap">
-                    {fmtTick(t)}
-                  </span>
-                </div>
-              ))}
+              {ruler.ticks.map((t) => {
+                // A label the playhead's own readout would sit on is left out.
+                const dx = (t - playhead) * ruler.pxPerSec
+                const hidden = dx > -12 && dx < 58
+                return (
+                  <div key={t} className="absolute top-0 h-full" style={{ left: pct(t) }}>
+                    <div className="absolute bottom-0 left-0 w-px h-1.5 bg-muted/60" />
+                    <span
+                      className={`absolute top-0 left-1 text-[10.5px] leading-4 text-muted tabular-nums whitespace-nowrap transition-opacity ${
+                        hidden ? 'opacity-0' : ''
+                      }`}
+                    >
+                      {fmtTick(t)}
+                    </span>
+                  </div>
+                )
+              })}
               {/* minor tick between each label */}
               {ruler.ticks.map((t) => (
                 <div
@@ -1563,6 +1605,21 @@ export default function TimelineEditor({
                 style={{ left: pct(a), width: pct(b - a) }}
               />
             ))}
+            {/* Where someone is talking: a cue for where to cut, drawn from
+                the transcript's words (no waveform is decoded here). */}
+            <div className="absolute top-4 bottom-0 inset-x-0 pointer-events-none" aria-hidden>
+              {words.map((w, i) => (
+                <div
+                  key={`w${i}`}
+                  className="absolute top-1/2 -translate-y-1/2 rounded-[2px] bg-gold/25"
+                  style={{
+                    left: pct(w.start),
+                    width: `max(2px, calc(${pct(Math.max(w.end - w.start, 0.05))} - 2px))`,
+                    height: `${26 + ((w.word.length * 13) % 34)}%`
+                  }}
+                />
+              ))}
+            </div>
             {edit.mutes.map(([a, b], i) => (
               <div
                 key={`m${i}`}
@@ -1572,8 +1629,8 @@ export default function TimelineEditor({
             ))}
             {/* trim handles */}
             <div
-              className="absolute top-4 bottom-0 w-2 bg-gold rounded--md cursor-ew-resize"
-              style={{ left: `calc(${pct(keep[0][0])} - 4px)` }}
+              className="absolute top-4 bottom-0 w-2 bg-gold rounded-md cursor-ew-resize shadow-[0_0_8px_rgb(216_178_99/0.5)]"
+              style={{ left: `max(0px, calc(${pct(keep[0][0])} - 4px))` }}
               onPointerDown={(e) => {
                 e.stopPropagation()
                 dragging.current = 'start'
@@ -1582,8 +1639,8 @@ export default function TimelineEditor({
               title="Drag to trim the start"
             />
             <div
-              className="absolute top-4 bottom-0 w-2 bg-gold rounded--md cursor-ew-resize"
-              style={{ left: `calc(${pct(keep[keep.length - 1][1])} - 4px)` }}
+              className="absolute top-4 bottom-0 w-2 bg-gold rounded-md cursor-ew-resize shadow-[0_0_8px_rgb(216_178_99/0.5)]"
+              style={{ left: `min(calc(100% - 8px), calc(${pct(keep[keep.length - 1][1])} - 4px))` }}
               onPointerDown={(e) => {
                 e.stopPropagation()
                 dragging.current = 'end'
@@ -1662,7 +1719,20 @@ export default function TimelineEditor({
       </div>
 
       {/* ── editing tabs (grouped, CapCut-style) ── */}
-      <div className="flex gap-0.5 border-b border-line/60 text-xs overflow-x-auto" role="tablist">
+      <div
+        ref={tabsRef}
+        className="flex gap-0.5 border-b border-line/60 text-xs overflow-x-auto"
+        role="tablist"
+        aria-label="Edit tools"
+        onScroll={markTabEdges}
+        onWheel={(e) => {
+          // A mouse wheel moves the strip sideways when it overflows.
+          const el = e.currentTarget
+          if (el.scrollWidth > el.clientWidth && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+            el.scrollLeft += e.deltaY
+          }
+        }}
+      >
         {tabs.map((t) => {
           const changed =
             (t.id === 'captions' && (styleDirty || cardDirty || wordEdits.length > 0 || speakerDirty)) ||
@@ -1759,11 +1829,7 @@ export default function TimelineEditor({
                   : 'Click a word to mute it (audio silent, caption censored).'}
             </span>
           </div>
-          <div
-            className={`max-h-28 overflow-y-auto bg-base rounded-md p-2 leading-6 ${
-              mode === 'speaker' ? 'select-none' : ''
-            }`}
-          >
+          <div className={`bay-transcript ${mode === 'speaker' ? 'select-none' : ''}`}>
             {words.map((w, i) => {
               if (editingWord?.i === i) {
                 return (
@@ -1806,7 +1872,7 @@ export default function TimelineEditor({
                         ? setEditingWord({ i, value: corrected?.to ?? w.word })
                         : toggleWord(w)
                   }
-                  className={`text-xs mr-1 rounded px-0.5 ${
+                  className={`text-[13px] mr-[3px] rounded px-[2px] transition-colors ${
                     muted
                       ? 'line-through text-error bg-error/10'
                       : corrected
@@ -1850,7 +1916,7 @@ export default function TimelineEditor({
       {/* this clip's post style, and the words on its Highlights title card
           (vertical clips only: a 16:9 clip never draws a post style) */}
       {activeTab === 'captions' && !isLandscape && (
-        <div className="border border-line/60 rounded-lg p-3 space-y-3">
+        <div className="bay-section">
           <PostStyleControls idPrefix={`clip-${clip.id}`} style={captionStyle} onChange={setStyleField} />
           {highlights && (
             <div className="space-y-2">
@@ -1871,7 +1937,7 @@ export default function TimelineEditor({
                 value={subline}
                 onChange={(e) => setSubline(e.target.value)}
               />
-              <p className="text-[11px] text-muted/70">Leave both empty for no card.</p>
+              <p className="text-[11px] text-muted">Leave both empty for no card.</p>
             </div>
           )}
         </div>
@@ -1879,8 +1945,8 @@ export default function TimelineEditor({
 
       {/* caption font & style for this clip */}
       {activeTab === 'captions' && (
-        <div className="border border-line/60 rounded-lg p-3">
-          <p className="label mb-2">Caption font &amp; style</p>
+        <div className="bay-section">
+          <p className="label !mb-0">Caption font &amp; style</p>
           <CaptionStyleControls
             idPrefix={`clip-${clip.id}`}
             style={captionStyle}
@@ -1908,7 +1974,7 @@ export default function TimelineEditor({
 
       {/* watermark / branding for this clip */}
       {activeTab === 'watermark' && (
-        <div className="border border-line/60 rounded-lg p-3 space-y-2">
+        <div className="bay-section">
           {!watermark ? (
             <button
               className="bg-raised border border-line/60 px-2.5 py-1.5 rounded-md text-xs hover:border-gold/40 hover:text-gold-strong transition-colors"
@@ -1920,7 +1986,7 @@ export default function TimelineEditor({
             <>
               <div className="flex justify-end">
                 <button
-                  className="text-xs text-muted hover:text-error"
+                  className="min-h-6 px-1 text-xs text-muted hover:text-error"
                   onClick={() => setWatermark(null)}
                   title="Remove the watermark from this clip"
                 >
@@ -1930,9 +1996,10 @@ export default function TimelineEditor({
               <WatermarkControls
                 config={watermark}
                 landscape={isLandscape}
+                preview={false}
                 onChange={(patch) => setWatermark({ ...(watermark ?? DEFAULT_WATERMARK), ...patch })}
               />
-              <p className="text-[11px] text-muted/70">Tip: drag it on the preview to place it exactly.</p>
+              <p className="text-[11px] text-muted">Tip: drag it on the preview to place it exactly.</p>
             </>
           )}
         </div>
@@ -1940,11 +2007,56 @@ export default function TimelineEditor({
 
       {/* audio controls */}
       {activeTab === 'audio' && (
-        <div className="flex items-center gap-3 flex-wrap text-xs">
+        <div className="bay-section">
+        <div className="bay-fields">
+        <label className="bay-field">
+          <span className="label">Volume</span>
+          <span className="bay-inline">
+            <input
+              type="range"
+              min={0}
+              max={200}
+              value={Math.round(edit.volume * 100)}
+              disabled={edit.mute_all}
+              className="w-24 accent-accent-strong"
+              onChange={(e) => setEdit({ ...edit, volume: Number(e.target.value) / 100 })}
+              onMouseUp={() => setHistory((h) => [...h.slice(-30), { edit }])}
+            />
+            <span className="tabular-nums w-10 text-right text-sm text-ink">{Math.round(edit.volume * 100)}%</span>
+          </span>
+        </label>
+        {(['fade_in', 'fade_out'] as const).map((k) => (
+          <label key={k} className="bay-field">
+            <span className="label">{k === 'fade_in' ? 'Fade in' : 'Fade out'}</span>
+            <select
+              value={edit[k]}
+              onChange={(e) => push({ ...edit, [k]: Number(e.target.value) })}
+              className="input"
+            >
+              <option value={0}>off</option>
+              <option value={0.3}>0.3s</option>
+              <option value={0.5}>0.5s</option>
+              <option value={1}>1s</option>
+            </select>
+          </label>
+        ))}
+        <label
+          className="bay-check"
+          title="Remove ALL of the clip's audio — e.g. to post it with background music only"
+        >
+          <input
+            type="checkbox"
+            checked={edit.mute_all}
+            onChange={(e) => push({ ...edit, mute_all: e.target.checked })}
+          />
+          Mute all
+        </label>
+        </div>
         {/* Proposes cuts into the normal edit list, so they are drawn on the
             timeline and can be adjusted or undone before anything renders. */}
+        <div className="flex items-center gap-3 flex-wrap border-t border-line/40 pt-3">
         <button
-          className="btn-ghost !py-1 text-xs"
+          className="btn-ghost !py-1.5 !px-3 text-xs inline-flex items-center gap-1.5"
           disabled={tightening}
           title="Find pauses and filler words (um, uh) and cut them. The cuts appear on the timeline for you to check — nothing renders until you Apply."
           onClick={async () => {
@@ -1967,49 +2079,13 @@ export default function TimelineEditor({
             }
           }}
         >
-          {tightening ? 'Finding…' : 'Trim pauses & filler'}
+          <Zap /> {tightening ? 'Finding…' : 'Trim pauses & filler'}
         </button>
-        {tightenNote && <span className="text-muted">{tightenNote}</span>}
-        <label
-          className="flex items-center gap-1.5 cursor-pointer"
-          title="Remove ALL of the clip's audio — e.g. to post it with background music only"
-        >
-          <input
-            type="checkbox"
-            checked={edit.mute_all}
-            onChange={(e) => push({ ...edit, mute_all: e.target.checked })}
-          />
-          Mute all
-        </label>
-        <label className="flex items-center gap-1.5">
-          Volume
-          <input
-            type="range"
-            min={0}
-            max={200}
-            value={Math.round(edit.volume * 100)}
-            disabled={edit.mute_all}
-            className="w-24 accent-accent-strong"
-            onChange={(e) => setEdit({ ...edit, volume: Number(e.target.value) / 100 })}
-            onMouseUp={() => setHistory((h) => [...h.slice(-30), { edit }])}
-          />
-          <span className="tabular-nums w-8">{Math.round(edit.volume * 100)}%</span>
-        </label>
-        {(['fade_in', 'fade_out'] as const).map((k) => (
-          <label key={k} className="flex items-center gap-1.5">
-            {k === 'fade_in' ? 'Fade in' : 'Fade out'}
-            <select
-              value={edit[k]}
-              onChange={(e) => push({ ...edit, [k]: Number(e.target.value) })}
-              className="bg-base border border-line rounded px-1 py-0.5"
-            >
-              <option value={0}>off</option>
-              <option value={0.3}>0.3s</option>
-              <option value={0.5}>0.5s</option>
-              <option value={1}>1s</option>
-            </select>
-          </label>
-        ))}
+        <span className="bay-help flex-1 min-w-48">
+          {tightenNote ||
+            'Smarter than Tighten pauses: it also finds filler words (um, uh). The cuts show on the timeline first.'}
+        </span>
+        </div>
         </div>
       )}
 
@@ -2018,7 +2094,7 @@ export default function TimelineEditor({
         <p className="text-xs text-muted">Layout: Vertical Live keeps the stream’s own 9:16 layout.</p>
       )}
       {activeTab === 'motion' && !isLandscape && !isVerticalLive && (
-        <div className="flex items-center gap-2 text-xs flex-wrap">
+        <div className="flex items-center gap-2 text-xs flex-wrap bay-layout-row">
           <span className="text-muted">Layout</span>
           {(
             [
@@ -2054,7 +2130,7 @@ export default function TimelineEditor({
             </button>
           ))}
           {(layoutDirty || gamingDirty) && (
-            <span className="text-muted">— shows in “Update preview”, saved on Apply</span>
+            <p className="bay-help w-full">Shows in Update preview; saved when you Apply.</p>
           )}
         </div>
       )}
@@ -2083,14 +2159,14 @@ export default function TimelineEditor({
 
       {/* speed / hook title / music — the Effects tab */}
       {activeTab === 'motion' && (
-        <div className="space-y-2 text-xs">
-        <div className="flex items-center gap-3 flex-wrap">
-          <label className="flex items-center gap-1.5">
-            Speed
+        <div className="bay-section">
+        <div className="bay-fields">
+          <label className="bay-field">
+            <span className="label">Speed</span>
             <select
               value={edit.speed ?? 1}
               onChange={(e) => push({ ...edit, speed: Number(e.target.value) })}
-              className="bg-base border border-line rounded px-1 py-0.5"
+              className="input"
             >
               {[0.75, 1, 1.25, 1.5, 2].map((s) => (
                 <option key={s} value={s}>
@@ -2099,12 +2175,13 @@ export default function TimelineEditor({
               ))}
             </select>
           </label>
-          <label className="flex items-center gap-1.5 flex-1 min-w-48">
-            Hook title
+          <label className="bay-field bay-wide">
+            <span className="label">Hook title</span>
+            <span className="bay-inline">
             <input
               value={edit.hook?.text ?? ''}
               placeholder="big top text for the first seconds, e.g. WAIT FOR IT…"
-              className="flex-1 bg-base border border-line rounded px-2 py-1"
+              className="input flex-1"
               onChange={(e) =>
                 setEdit({
                   ...edit,
@@ -2115,12 +2192,11 @@ export default function TimelineEditor({
               }
               onBlur={() => setHistory((h) => [...h.slice(-30), { edit }])}
             />
-          </label>
           {edit.hook && (
             <select
               value={edit.hook.seconds}
               onChange={(e) => push({ ...edit, hook: { ...edit.hook!, seconds: Number(e.target.value) } })}
-              className="bg-base border border-line rounded px-1 py-0.5"
+              className="input !w-auto shrink-0"
               aria-label="How long the hook title stays on screen"
             >
               {[2, 3, 5, 8].map((s) => (
@@ -2130,14 +2206,16 @@ export default function TimelineEditor({
               ))}
             </select>
           )}
-        </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <label className="flex items-center gap-1.5 flex-1 min-w-56">
-            Music
+            </span>
+          </label>
+          <div className="bay-field bay-wide">
+          <label className="label" htmlFor={`clip-${clip.id}-music`}>Music</label>
+          <span className="bay-inline">
             <input
+              id={`clip-${clip.id}-music`}
               value={edit.music?.path ?? ''}
               placeholder="background music — loops under the clip"
-              className="flex-1 bg-base border border-line rounded px-2 py-1"
+              className="input flex-1"
               onChange={(e) =>
                 setEdit({
                   ...edit,
@@ -2152,9 +2230,8 @@ export default function TimelineEditor({
               }
               onBlur={() => setHistory((h) => [...h.slice(-30), { edit }])}
             />
-          </label>
           <button
-            className="bg-raised border border-line/60 px-2.5 py-1 rounded-md hover:border-gold/40 hover:text-gold-strong transition-colors"
+            className="btn-ghost !py-1.5 !px-3 text-xs inline-flex items-center shrink-0"
             onClick={async () => {
               const path = await window.studio.pickAudioFile()
               if (path) {
@@ -2173,10 +2250,13 @@ export default function TimelineEditor({
             <Folder className="mr-1.5" />
             Browse…
           </button>
+          </span>
+          </div>
           {edit.music && (
             <>
-              <label className="flex items-center gap-1.5">
-                Vol
+              <label className="bay-field">
+                <span className="label">Vol</span>
+                <span className="bay-inline">
                 <input
                   type="range"
                   min={5}
@@ -2187,8 +2267,10 @@ export default function TimelineEditor({
                     setEdit({ ...edit, music: { ...edit.music!, volume: Number(e.target.value) / 100 } })
                   }
                 />
+                <span className="tabular-nums w-10 text-right text-sm text-ink">{Math.round(edit.music.volume * 100)}%</span>
+                </span>
               </label>
-              <label className="flex items-center gap-1.5 cursor-pointer" title="Music automatically dips whenever the creator talks">
+              <label className="bay-check" title="Music automatically dips whenever the creator talks">
                 <input
                   type="checkbox"
                   checked={edit.music.duck}
@@ -2282,7 +2364,7 @@ export default function TimelineEditor({
       </div>
 
       <button
-        className="btn-accent w-full disabled:opacity-40"
+        className="btn-accent bay-apply w-full disabled:opacity-40"
         disabled={busy || !dirty}
         onClick={apply}
         title={dirty ? 'Re-render the clip with your changes' : 'No changes yet — edit something first'}
@@ -2290,10 +2372,10 @@ export default function TimelineEditor({
         {busy ? 'Queuing…' : dirty ? 'Apply edits (re-render)' : 'Apply edits — no changes yet'}
       </button>
       {notice && <p className="text-xs text-muted">{notice}</p>}
-      <p className="text-[11px] text-muted/70">
-        Cuts, mutes and speed are simulated instantly as you play. For the TRUE result — updated
-        caption text, hook title, music, exact framing — press “Update preview” (a real render,
-        up to a minute). Nothing is final until Apply.
+      <p className="bay-help">
+        Cuts, mutes and speed are simulated instantly as you play. For the final result (caption
+        text, hook title, music, exact framing) press Update preview: a real render, up to a
+        minute. Nothing is final until you Apply.
       </p>
     </div>
   )

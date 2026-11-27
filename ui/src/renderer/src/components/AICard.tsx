@@ -5,6 +5,8 @@ import { t } from '../lib/i18n'
 import type { AIModel, AIProvider, AISignIn, AIStatus } from '../lib/types'
 import { forgetAIStatus } from '../lib/useAIStatus'
 import { motionReduced } from '../lib/motion'
+import { Icon, type IconName } from './icons'
+import { Button } from './ui'
 
 /** Settings → AI: where the AI work and the transcription run.
  *
@@ -176,7 +178,8 @@ function JobChoice({
         checked={tier === 'local'}
         onSelect={chooseLocal}
         busy={busy}
-        title={job === 'ai' ? `⭐ ${t('Ollama')}` : `⭐ ${t('Whisper')}`}
+        title={job === 'ai' ? t('Ollama') : t('Whisper')}
+        icon="star"
         badge={t('Local AI · recommended')}
         tone="local"
         tagline={
@@ -186,8 +189,8 @@ function JobChoice({
         }
       >
         {job === 'ai' && onOpenModels && (
-          <button className="text-xs text-gold hover:underline" onClick={onOpenModels}>
-            {t('Manage local models')} →
+          <button className="sys-textlink text-xs" onClick={onOpenModels}>
+            {t('Manage local models')} <Icon name="arrow-right" size={12} />
           </button>
         )}
       </TierRow>
@@ -202,7 +205,8 @@ function JobChoice({
             setRecommendedId(p.id)
           }}
           busy={busy}
-          title={`🚀 ${p.label}`}
+          title={p.label}
+          icon="zap"
           badge={t('Recommended cloud AI')}
           tone="recommended"
           tagline={p.tagline}
@@ -218,6 +222,7 @@ function JobChoice({
           onSelect={() => setTier('direct')}
           busy={busy}
           title={t('Direct provider API')}
+          icon="link"
           badge={t('Advanced')}
           tone="direct"
           tagline={t('Connect straight to one provider with your own key.')}
@@ -285,6 +290,7 @@ function TierRow({
   onSelect,
   busy,
   title,
+  icon,
   badge,
   tone,
   tagline,
@@ -295,6 +301,7 @@ function TierRow({
   onSelect: () => void
   busy: boolean
   title: string
+  icon?: IconName
   badge: string
   tone: 'local' | 'recommended' | 'direct'
   tagline: string
@@ -318,10 +325,11 @@ function TierRow({
           checked={checked}
           disabled={busy}
           onChange={onSelect}
-          className="mt-1 size-4 accent-accent-strong shrink-0"
+          className="mt-0.5 shrink-0"
         />
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2 flex-wrap">
+            {icon && <Icon name={icon} size={14} className="sys-tier-icon" />}
             <span className="text-sm font-semibold">{title}</span>
             <span className={`text-[10px] font-semibold uppercase tracking-wide rounded px-1.5 py-0.5 ${badgeTone}`}>
               {badge}
@@ -469,7 +477,7 @@ function ProviderPanel({
             <div className="space-y-1">
               <p className="text-xs text-gold">
                 {t('Waiting for you to approve Solaris Studio in your browser…')}{' '}
-                <button className="text-muted hover:underline" onClick={() => setWaiting(false)}>
+                <button className="sys-textlink sys-textlink-muted" onClick={() => setWaiting(false)}>
                   {t('Cancel')}
                 </button>
               </p>
@@ -477,7 +485,7 @@ function ProviderPanel({
                 {t('It connects whichever')} {provider.label}{' '}
                 {t('account that browser is signed in to. For a different account, open the link in a private window or another browser:')}{' '}
                 <button
-                  className="text-gold hover:underline"
+                  className="sys-textlink"
                   onClick={() =>
                     void navigator.clipboard.writeText(signInUrl).then(
                       () => setCopied(true),
@@ -490,9 +498,9 @@ function ProviderPanel({
               </p>
             </div>
           ) : (
-            <button className="btn-accent !py-1.5 !px-4 text-sm" disabled={busy} onClick={signIn}>
+            <Button variant="accent" size="sm" icon="link" disabled={busy} onClick={signIn}>
               {t('Sign in with')} {provider.label}
-            </button>
+            </Button>
           )}
           <details className="text-xs">
             <summary className="cursor-pointer text-muted hover:text-ink">
@@ -501,10 +509,10 @@ function ProviderPanel({
             <div className="mt-2 space-y-2">
               <p className="text-muted">
                 <button
-                  className="text-gold hover:underline"
+                  className="sys-textlink"
                   onClick={() => void window.studio.openExternal(provider.key_url)}
                 >
-                  {t('Create a key on')} {provider.label} ↗
+                  {t('Create a key on')} {provider.label} <Icon name="external-link" size={11} className="sys-textlink-ext" />
                 </button>{' '}
                 {t('and paste it here. Solaris Studio checks it before keeping it.')}
               </p>
@@ -518,10 +526,10 @@ function ProviderPanel({
         <ol className="text-xs text-muted list-decimal pl-4 space-y-0.5">
           <li>
             <button
-              className="text-gold hover:underline"
+              className="sys-textlink"
               onClick={() => void window.studio.openExternal(provider.key_url)}
             >
-              {t('Open')} {provider.label} ↗
+              {t('Open')} {provider.label} <Icon name="external-link" size={11} className="sys-textlink-ext" />
             </button>{' '}
             {t('and sign in or create an account.')}
           </li>
@@ -535,10 +543,10 @@ function ProviderPanel({
           {provider.plan_note}{' '}
           {provider.plan_note_url && (
             <button
-              className="text-gold hover:underline"
+              className="sys-textlink"
               onClick={() => void window.studio.openExternal(provider.plan_note_url as string)}
             >
-              {t('Why?')} ↗
+              {t('Why?')} <Icon name="external-link" size={11} className="sys-textlink-ext" />
             </button>
           )}
         </p>
@@ -548,13 +556,13 @@ function ProviderPanel({
 
       {provider.has_key && (
         <div className="space-y-1.5">
-          <p className="label !normal-case !tracking-normal text-[11px]">
+          <p className="label">
             {job === 'ai' ? t('Text model') : t('Voice model')}
           </p>
           {loadError ? (
             <p className="text-xs text-error">
               {t("Couldn't load the models and prices:")} {loadError}{' '}
-              <button className="text-gold hover:underline" onClick={() => load(true)}>
+              <button className="sys-textlink" onClick={() => load(true)}>
                 {t('Retry')}
               </button>
             </p>
@@ -573,9 +581,10 @@ function ProviderPanel({
           )}
           {preferred && inUse !== preferred.id && (
             <p className="text-[11px] text-muted">
-              ★ {t('Preferred')}: <span className="text-ink">{preferred.name}</span> · {shortPrice(preferred)} ·{' '}
+              <Icon name="star" size={11} className="inline -mt-0.5 mr-1 text-gold" />
+              {t('Preferred')}: <span className="text-ink">{preferred.name}</span> · {shortPrice(preferred)} ·{' '}
               {job === 'ai' ? t('the cheapest for text') : t('the cheapest with word timings')}{' '}
-              <button className="text-gold hover:underline" disabled={busy} onClick={() => choose(preferred.id)}>
+              <button className="sys-textlink" disabled={busy} onClick={() => choose(preferred.id)}>
                 {t('Use it')}
               </button>
             </p>
@@ -588,7 +597,8 @@ function ProviderPanel({
           )}
           {missing && (
             <p className="text-[11px] text-warn">
-              ⚠ {inUse} {t("isn't offered to your key any more. Jobs will stop until you choose another.")}
+              <Icon name="alert" size={11} className="inline -mt-0.5 mr-1" />
+              {inUse} {t("isn't offered to your key any more. Jobs will stop until you choose another.")}
             </p>
           )}
           {current && <ModelDetail model={current} voice={job === 'stt'} />}
@@ -598,16 +608,21 @@ function ProviderPanel({
               {inUse ? `● ${t('In use')}: ${inUse}` : t('Not in use yet: choose a model.')}
             </span>
             <span className="ml-auto flex gap-1.5">
-              <button
-                className="btn-ghost !py-0.5 !px-2 text-xs"
+              <Button
+                variant="ghost"
+                size="sm"
+                icon="refresh"
+                loading={loading}
                 disabled={busy || loading}
                 onClick={() => load(true)}
                 title={t('Fetch the models and their prices again')}
               >
-                ↻ {t('Refresh models')}
-              </button>
-              <button
-                className="btn-ghost !py-0.5 !px-2 text-xs"
+                {t('Refresh models')}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                icon="zap"
                 disabled={busy}
                 onClick={() =>
                   void api
@@ -617,7 +632,7 @@ function ProviderPanel({
                 }
               >
                 {t('Test connection')}
-              </button>
+              </Button>
             </span>
           </div>
           {fetchedAt > 0 && !loadError && (
@@ -632,7 +647,7 @@ function ProviderPanel({
                 <>
                   {' '}
                   {t('When it stops a job with "rate limiting", that is this limit.')}{' '}
-                  <button className="text-gold hover:underline" disabled={busy} onClick={() => choose(paid.id)}>
+                  <button className="sys-textlink" disabled={busy} onClick={() => choose(paid.id)}>
                     {t('Use the paid version')} ({shortPrice(paid)})
                   </button>
                 </>
@@ -640,9 +655,9 @@ function ProviderPanel({
             </p>
           )}
           {test && (
-            <p className={`text-[11px] ${test.ok ? 'text-success' : 'text-error'}`}>
-              {test.ok ? '✓ ' : ''}
-              {test.message}
+            <p className={`text-xs flex items-start gap-1.5 ${test.ok ? 'text-success' : 'text-error'}`}>
+              <Icon name={test.ok ? 'check' : 'alert'} size={12} className="mt-0.5 shrink-0" />
+              <span>{test.message}</span>
             </p>
           )}
         </div>
@@ -650,7 +665,7 @@ function ProviderPanel({
 
       {recommended && job === 'ai' && (
         <details className="text-xs">
-          <summary className="cursor-pointer text-gold">{t('Why OpenRouter?')}</summary>
+          <summary className="sys-tech-summary cursor-pointer text-gold">{t('Why OpenRouter?')}</summary>
           <ul className="mt-1.5 list-disc pl-4 space-y-1 text-muted">
             <li>
               {t(
@@ -682,20 +697,20 @@ function ProviderPanel({
           <>
             {t("Prices shown are OpenRouter's current listed prices. API usage is charged to your OpenRouter account; Solaris Studio doesn't provide or pay for it.")}{' '}
             <button
-              className="text-gold hover:underline"
+              className="sys-textlink"
               onClick={() => void window.studio.openExternal('https://openrouter.ai/docs/faq')}
             >
-              {t("OpenRouter's fees")} ↗
+              {t("OpenRouter's fees")} <Icon name="external-link" size={11} className="sys-textlink-ext" />
             </button>
           </>
         ) : (
           <>
             {t('Billed by')} {provider.label} {t("to your account. Solaris Studio doesn't provide or pay for API use.")}{' '}
             <button
-              className="text-gold hover:underline"
+              className="sys-textlink"
               onClick={() => void window.studio.openExternal(provider.pricing_url)}
             >
-              {t('Pricing')} ↗
+              {t('Pricing')} <Icon name="external-link" size={11} className="sys-textlink-ext" />
             </button>
           </>
         )}
@@ -790,8 +805,8 @@ function SignInPanel({
   }
 
   const link = (url: string, label: string): JSX.Element => (
-    <button className="text-gold hover:underline" onClick={() => void window.studio.openExternal(url)}>
-      {label} ↗
+    <button className="sys-textlink" onClick={() => void window.studio.openExternal(url)}>
+      {label} <Icon name="external-link" size={11} className="sys-textlink-ext" />
     </button>
   )
 
@@ -851,7 +866,7 @@ function SignInPanel({
             </button>
           </div>
 
-          <p className="label !normal-case !tracking-normal text-[11px]">{t('Model')}</p>
+          <p className="label">{t('Model')}</p>
           {loadError ? (
             <p className="text-xs text-error">{loadError}</p>
           ) : (
@@ -954,9 +969,9 @@ function SignInPanel({
             </button>
           </div>
           {test && (
-            <p className={`text-[11px] ${test.ok ? 'text-success' : 'text-error'}`}>
-              {test.ok ? '✓ ' : ''}
-              {test.message}
+            <p className={`text-xs flex items-start gap-1.5 ${test.ok ? 'text-success' : 'text-error'}`}>
+              <Icon name={test.ok ? 'check' : 'alert'} size={12} className="mt-0.5 shrink-0" />
+              <span>{test.message}</span>
             </p>
           )}
           <p className="text-[11px] text-muted">{plan.sign_out_note}</p>
@@ -1063,22 +1078,26 @@ function ModelDetail({ model, voice }: { model: AIModel; voice: boolean }): JSX.
           </p>
         )
       )}
-      <p className="text-muted">
-        {voice
-          ? model.verified
-            ? `✓ ${t('Returns word timings')}`
-            : t('Checked with a test clip when chosen')
-          : [model.json_schema && `✓ ${t('Strict JSON')}`, model.tools && `✓ ${t('Tools (assistant)')}`]
-              .filter(Boolean)
-              .join('  ')}
+      <p className="text-muted flex flex-wrap items-center gap-x-3 gap-y-1">
+        {(voice
+          ? [model.verified ? t('Returns word timings') : '']
+          : [model.json_schema ? t('Strict JSON') : '', model.tools ? t('Tools (assistant)') : '']
+        )
+          .filter(Boolean)
+          .map((cap) => (
+            <span key={cap} className="inline-flex items-center gap-1">
+              <Icon name="check" size={11} className="text-success" />
+              {cap}
+            </span>
+          ))}
+        {voice && !model.verified && <span>{t('Checked with a test clip when chosen')}</span>}
         {model.page_url && (
           <>
-            {'  '}
             <button
-              className="text-gold hover:underline"
+              className="sys-textlink"
               onClick={() => void window.studio.openExternal(model.page_url)}
             >
-              {t('View current pricing')} ↗
+              {t('View current pricing')} <Icon name="external-link" size={11} className="sys-textlink-ext" />
             </button>
           </>
         )}
@@ -1294,10 +1313,10 @@ function KeyField({ provider, busy, run }: { provider: AIProvider; busy: boolean
         {t('Save')}
       </button>
       <button
-        className="text-xs text-gold hover:underline"
+        className="sys-textlink text-xs"
         onClick={() => void window.studio.openExternal(provider.key_url)}
       >
-        {t('Get a key')} ↗
+        {t('Get a key')} <Icon name="external-link" size={11} className="sys-textlink-ext" />
       </button>
       {replacing && (
         <button className="btn-ghost !py-1 !px-2 text-xs" onClick={() => setReplacing(false)}>

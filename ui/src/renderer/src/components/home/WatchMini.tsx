@@ -91,7 +91,9 @@ export default function WatchMini({ active, className }: { active: boolean; clas
             <span className="shrink-0 opacity-70">· {relativeTime(latest.at * 1000, now)}</span>
           </>
         ) : (
-          act?.now.text ?? t('New uploads get clipped automatically.')
+          // Off, the engine's "switch it on" has no switch here: the button
+          // below is how to start.
+          (on ? act?.now.text : null) ?? t('New uploads get clipped automatically.')
         )}
       </p>
       <Button variant="ghost" size="sm" iconRight="arrow-right" className="nudge w-full mt-auto" onClick={() => navigate({ page: 'watch' })}>

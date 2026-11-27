@@ -65,7 +65,9 @@ function statusOf(v: Video): { tone: 'done' | 'failed' | 'running'; word: string
 function Monogram({ seed, label }: { seed: string; label: string }): JSX.Element {
   let h = 0
   for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0
-  const hue = Math.abs(h) % 40
+  // Burgundy to deep wine, a little apart per channel: the old olive-to-gold
+  // range sat off the palette beside the burgundy UI.
+  const hue = Math.abs(h) % 24
   const letters =
     label
       .split(/\s+/)
@@ -77,7 +79,7 @@ function Monogram({ seed, label }: { seed: string; label: string }): JSX.Element
     <span
       className="lib-row-mono"
       style={{
-        background: `linear-gradient(135deg, hsl(${340 + hue} 55% 26%), hsl(${30 + hue} 45% 32%))`
+        background: `radial-gradient(120% 90% at 30% 20%, hsl(${336 + hue} 58% 34%), hsl(${330 + hue} 52% 16%))`
       }}
       aria-hidden
     >
@@ -316,7 +318,7 @@ export default function VideoRail({
         <SearchInput
           value={search}
           onChange={onSearch}
-          placeholder={t('Search your videos or channels…')}
+          placeholder={t('Search videos…')}
           ariaLabel="Search processed videos by title or channel"
           hotkey
         />

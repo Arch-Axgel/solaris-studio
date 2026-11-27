@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { api } from '../../lib/api'
 import { helpFor } from '../../lib/help'
 import { t } from '../../lib/i18n'
 import { pageMeta, useLayer, useRoute } from '../../lib/nav'
@@ -52,6 +53,28 @@ function fillInput(root: HTMLElement | null, text: string): boolean {
   return true
 }
 
+/** "openrouter/baidu/ernie-5.5-flash-preview:free" → "OpenRouter · ernie-5.5-flash-preview".
+ *  The raw id stays in the tooltip; the drawer shows something readable. */
+const PROVIDERS: Record<string, string> = {
+  openrouter: 'OpenRouter',
+  openai: 'OpenAI',
+  anthropic: 'Anthropic',
+  google: 'Google',
+  gemini: 'Google',
+  groq: 'Groq',
+  mistral: 'Mistral',
+  ollama: 'This PC',
+  local: 'This PC'
+}
+function friendlyModel(raw: string): string {
+  const id = raw.trim()
+  if (!id) return ''
+  const parts = id.split('/')
+  const provider = parts.length > 1 ? PROVIDERS[parts[0].toLowerCase()] : undefined
+  const name = (parts[parts.length - 1] ?? id).replace(/:(free|latest)$/i, '')
+  return provider ? `${provider} · ${name}` : name
+}
+
 export default function AssistantDrawer(): JSX.Element | null {
   const { open, payload, close } = useLayer<{ prompt?: string }>('assistant')
   const route = useRoute()
@@ -61,6 +84,21 @@ export default function AssistantDrawer(): JSX.Element | null {
   const ref = useRef<HTMLElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
   const opener = useRef<HTMLElement | null>(null)
+  const [model, setModel] = useState('')
+
+  // A readable model line for the header (the embedded Assistant's own raw
+  // slug pill is hidden in the drawer, b2-layers.css).
+  useEffect(() => {
+    if (!open) return
+    let live = true
+    api
+      .agentStatus()
+      .then((st) => live && setModel(st.ready ? st.model || '' : ''))
+      .catch(() => live && setModel(''))
+    return () => {
+      live = false
+    }
+  }, [open])
 
   useEffect(() => {
     if (open) setMounted(true)
@@ -83,12 +121,23 @@ export default function AssistantDrawer(): JSX.Element | null {
     el.inert = !open
     if (open) {
       opener.current = document.activeElement as HTMLElement | null
-      const id = setTimeout(() => {
-        if (!el.contains(document.activeElement)) {
-          const input = el.querySelector<HTMLInputElement>('input.input:not([disabled])')
-          ;(input ?? el.querySelector<HTMLElement>('.lyr-asst-close'))?.focus({ preventScroll: true })
+      // The input is disabled while the Assistant checks its model, so focus
+      // the panel itself first (not the close button, whose tooltip would pop
+      // over the header) and hand focus to the input once it's usable.
+      let tries = 0
+      let id = 0 as unknown as ReturnType<typeof setTimeout>
+      const tick = (): void => {
+        const input = el.querySelector<HTMLInputElement>('input.input:not([disabled])')
+        const active = document.activeElement
+        const free = !el.contains(active) || active === el
+        if (input && free) {
+          input.focus({ preventScroll: true })
+          return
         }
-      }, 60)
+        if (tries === 0 && !el.contains(active)) el.focus({ preventScroll: true })
+        if (++tries < 20 && free) id = setTimeout(tick, 150)
+      }
+      id = setTimeout(tick, 60)
       return () => clearTimeout(id)
     }
     const back = opener.current
@@ -146,6 +195,7 @@ export default function AssistantDrawer(): JSX.Element | null {
       data-pinned={pinned ? 'true' : 'false'}
       aria-label={t('Ask Solaris Studio')}
       aria-hidden={!open}
+      tabIndex={-1}
     >
       <div className="lyr-asst-glow" aria-hidden />
       <header className="lyr-asst-head">
@@ -155,6 +205,12 @@ export default function AssistantDrawer(): JSX.Element | null {
         <div className="min-w-0">
           <h2 className="t-md text-ink">{t('Ask Solaris Studio')}</h2>
           <p className="text-xs text-muted truncate">{t('It plans first, and only posts when you ask it to.')}</p>
+          {model && (
+            <p className="lyr-asst-model" title={model}>
+              <Icon name="cpu" size={11} />
+              <span className="truncate">{friendlyModel(model)}</span>
+            </p>
+          )}
         </div>
         <div className="lyr-asst-tools">
           <IconButton
@@ -210,6 +266,18 @@ export default function AssistantDrawer(): JSX.Element | null {
 
       <div ref={hostRef} className="lyr-asst-host">
         <Assistant />
+        {/* Shown by CSS only while the conversation is empty (b2-layers.css):
+            the embedded Assistant's own "Try:" row repeats the chips above,
+            so it is hidden and this explains the box instead. */}
+        <div className="lyr-asst-empty" aria-hidden>
+          <span className="lyr-asst-empty-mark">
+            <Icon name="chat" size={20} />
+          </span>
+          <p className="text-sm text-ink font-medium">{t('Ask in plain words')}</p>
+          <p className="text-xs text-muted leading-relaxed">
+            {t('Pick a suggestion above or type your own. It shows you a plan before it does anything.')}
+          </p>
+        </div>
       </div>
     </aside>
   )

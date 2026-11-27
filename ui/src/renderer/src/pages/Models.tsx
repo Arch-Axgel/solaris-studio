@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api } from '../lib/api'
+import { api, gpuApi, type GpuReport } from '../lib/api'
 import { t } from '../lib/i18n'
 import { openSettings } from '../lib/nav'
 import { speedNote } from '../lib/modelSpeed'
@@ -31,6 +31,13 @@ import {
 const GiB = 1024 ** 3
 const gb = (bytes: number): string => `${(bytes / GiB).toFixed(1)} GB`
 
+/** The transcription backend id as words (the engine reports 'local' or a provider id). */
+function transcriptionLabel(ai: AIStatus): string {
+  const id = ai.transcription.backend
+  if (id === 'local') return t('This PC (Whisper)')
+  return ai.providers.find((p) => p.id === id)?.label ?? id
+}
+
 function WhereAIRuns({
   ai,
   offline,
@@ -56,10 +63,14 @@ function WhereAIRuns({
           {!ai ? (
             <Skeleton w={220} h={24} className="mt-1" />
           ) : (
-            <h2 className="t-lg text-ink mt-0.5">
-              {local ? t('This PC (Ollama)') : `${t('Cloud')}: ${label}`}
-              <span className="text-muted t-sm font-normal ml-2 font-mono">{ai.active.model}</span>
-            </h2>
+            <>
+              <h2 className="t-lg text-ink mt-0.5">{local ? t('This PC (Ollama)') : `${t('Cloud')}: ${label}`}</h2>
+              {ai.active.model && (
+                <p className="sys-where-model font-mono text-xs text-muted truncate" title={ai.active.model}>
+                  {ai.active.model}
+                </p>
+              )}
+            </>
           )}
           <p className="text-sm text-muted mt-1">
             {!ai
@@ -69,16 +80,16 @@ function WhereAIRuns({
                   ? t('Ollama isn’t answering, so clips can’t be picked until it runs.')
                   : t('Clip picking and titles run on this PC. Nothing leaves it.')
                 : t('Clip picking and titles use your own API key. Local models are only needed if you switch back.')}
-            {ai && (
-              <>
-                {' '}
-                <span className="text-muted/80">
-                  {t('Transcription')}: <span className="text-ink">{ai.transcription.backend}</span>
-                  {ai.transcription.model ? ` · ${ai.transcription.model}` : ''}
-                </span>
-              </>
-            )}
           </p>
+          {ai && (
+            <p className="sys-where-stt">
+              <Icon name="chat" size={13} />
+              <span>
+                {t('Transcription')}: <span className="text-ink">{transcriptionLabel(ai)}</span>
+                {ai.transcription.model ? ` · ${ai.transcription.model}` : ''}
+              </span>
+            </p>
+          )}
         </div>
         <div className="flex gap-2 shrink-0">
           {state === 'down' && (
@@ -110,16 +121,35 @@ function Hardware({ active }: { active: boolean }): JSX.Element {
   const stats = useSystemStats(active)
   const gpu = stats?.gpu ?? null
   const vramFrac = gpu && gpu.vram_total ? gpu.vram_used / gpu.vram_total : null
+  // The live stats can miss a card the GPU report sees (no NVML reading, a
+  // driver that answers nvidia-smi only): fall back to the report's name
+  // instead of telling the user there is no graphics card.
+  const [report, setReport] = useState<GpuReport | null>(null)
+  const needReport = Boolean(stats) && !gpu
+  useEffect(() => {
+    if (!needReport || report) return
+    let alive = true
+    gpuApi
+      .report()
+      .then((r) => alive && setReport(r))
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [needReport, report])
+  const reported = report?.nvidia.gpus[0] ?? null
+  const name = gpu?.name ?? reported?.name ?? null
+  const vramText = gpu ? `${gb(gpu.vram_used)} / ${gb(gpu.vram_total)}` : reported?.vram_gb ? `${reported.vram_gb} GB` : '—'
   return (
     <Card className="sys-hw">
       <div className="sys-hw-gauge">
-        <ProgressRing value={stats ? (vramFrac ?? 0) : null} size={92} stroke={7} label={t('Graphics memory in use')} tone="gold">
+        <ProgressRing value={stats ? (vramFrac ?? 0) : null} size={80} stroke={6} label={t('Graphics memory in use')} tone="gold">
           <span className="text-center">
             <span className="block t-md tabular text-ink">{vramFrac === null ? '—' : `${Math.round(vramFrac * 100)}%`}</span>
             <span className="t-micro">VRAM</span>
           </span>
         </ProgressRing>
-        <ProgressRing value={stats ? stats.ram_percent / 100 : null} size={92} stroke={7} label={t('Memory in use')} tone="accent">
+        <ProgressRing value={stats ? stats.ram_percent / 100 : null} size={80} stroke={6} label={t('Memory in use')} tone="accent">
           <span className="text-center">
             <span className="block t-md tabular text-ink">{stats ? `${Math.round(stats.ram_percent)}%` : '—'}</span>
             <span className="t-micro">RAM</span>
@@ -128,13 +158,13 @@ function Hardware({ active }: { active: boolean }): JSX.Element {
       </div>
       <div className="min-w-0 flex-1">
         <p className="t-micro">{t('This PC')}</p>
-        <p className="t-md text-ink mt-0.5 truncate" title={gpu?.name}>
-          {gpu?.name ?? (stats ? t('No graphics card reading') : t('Reading…'))}
+        <p className="sys-hw-name t-md text-ink mt-0.5 line-clamp-2" title={name ?? undefined}>
+          {name ?? (stats && (report || !needReport) ? t('No graphics card reading') : t('Reading…'))}
         </p>
         <dl className="sys-hw-facts">
           <div>
             <dt>{t('Graphics memory')}</dt>
-            <dd className="tabular">{gpu ? `${gb(gpu.vram_used)} / ${gb(gpu.vram_total)}` : '—'}</dd>
+            <dd className="tabular">{vramText}</dd>
           </div>
           <div>
             <dt>{t('GPU load')}</dt>
@@ -142,7 +172,7 @@ function Hardware({ active }: { active: boolean }): JSX.Element {
           </div>
           <div>
             <dt>{t('Free disk')}</dt>
-            <dd className="tabular">{stats ? gb(stats.disk_free_bytes) : '—'}</dd>
+            <dd className="tabular">{stats ? `${(stats.disk_free_bytes / 1e9).toFixed(1)} GB` : '—'}</dd>
           </div>
         </dl>
       </div>
@@ -273,7 +303,11 @@ export default function Models({ active = true }: { active?: boolean } = {}): JS
         title={t('AI models')}
         icon="cpu"
         vtName="page-title"
-        subtitle={t('The local AI that picks and titles your clips. Download, switch and remove models here.')}
+        subtitle={
+          cloud
+            ? t('Where the AI that picks and titles your clips runs, and the local models on this PC.')
+            : t('The local AI that picks and titles your clips. Download, switch and remove models here.')
+        }
       />
 
       <div className="sys-models-top">
@@ -306,8 +340,23 @@ export default function Models({ active = true }: { active?: boolean } = {}): JS
 
       {offline && !info ? (
         cloud ? (
-          <Card variant="sunken" className="text-sm text-muted">
-            {t('Ollama isn’t running, which is fine while the cloud is chosen. Local models show here once it runs.')}
+          <Card>
+            <EmptyState
+              compact
+              illustration="sun"
+              title={t('No local models in use')}
+              body={t('Ollama isn’t running, which is fine while the cloud is chosen. Local models show here once it runs.')}
+              action={
+                <>
+                  <Button variant="ghost" icon="gear" onClick={() => openSettings('ai')}>
+                    {t('Open AI settings')}
+                  </Button>
+                  <Button variant="subtle" icon="wand" onClick={() => window.dispatchEvent(new Event('open-setup-wizard'))}>
+                    {t('Run setup again')}
+                  </Button>
+                </>
+              }
+            />
           </Card>
         ) : (
           <Card>
@@ -451,8 +500,9 @@ export default function Models({ active = true }: { active?: boolean } = {}): JS
                 hint={t('Picked for a purpose rather than for your graphics card. All run locally, and all are free to use on clips you earn from.')}
               />
               <p className="text-xs text-muted">
-                Only <code>gemma:7b</code>, <code>gemma3:4b</code> and <code>gemma3:12b</code> have been tested against real streams. The rest
-                should work &mdash; they are all driven the same way &mdash; but nobody has measured whether they pick better clips.
+                {t(
+                  'Only gemma:7b, gemma3:4b and gemma3:12b have been tested against real streams. The rest should work (they are all driven the same way), but nobody has measured whether they pick better clips.'
+                )}
               </p>
               <div className="sys-rec-grid stagger">
                 {info.other_models.map((r) => {

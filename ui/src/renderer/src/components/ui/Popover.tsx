@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon, type IconName } from '../icons'
-import { cx, hideTop, placeFloating, showTop } from './position'
+import { cx, hideTop, layerHost, placeFloating, showTop } from './position'
 
 /** A click-to-open panel in the top layer (popover="auto": light dismiss and
  *  Esc for free), positioned against its trigger. */
@@ -52,6 +52,19 @@ export function Popover({
     }
     el.addEventListener('toggle', onToggle)
     window.addEventListener('resize', place)
+    // Pages scroll inside .keep-page, not the window: follow the trigger
+    // (capture catches every scroll container), and close once it is gone.
+    let raf = 0
+    const onScroll = (e: Event): void => {
+      if (el.contains(e.target as Node)) return
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => {
+        const r = triggerRef.current?.getBoundingClientRect()
+        if (!r || r.bottom < 0 || r.top > window.innerHeight) setOpen(false)
+        else place()
+      })
+    }
+    window.addEventListener('scroll', onScroll, true)
     // focus the first focusable thing inside
     const first = el.querySelector<HTMLElement>(
       '[role="menuitem"]:not([disabled]), button:not([disabled]), input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])'
@@ -60,6 +73,8 @@ export function Popover({
     return () => {
       el.removeEventListener('toggle', onToggle)
       window.removeEventListener('resize', place)
+      window.removeEventListener('scroll', onScroll, true)
+      cancelAnimationFrame(raf)
     }
   }, [open, side, align])
 
@@ -103,7 +118,7 @@ export function Popover({
           >
             {typeof children === 'function' ? children(close) : children}
           </div>,
-          document.body
+          layerHost(triggerRef.current)
         )}
     </>
   )

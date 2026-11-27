@@ -150,7 +150,7 @@ async function build(): Promise<void> {
             key: `creator:${c.creator_id}`,
             kind: 'creator',
             label: c.display_name,
-            sub: `${c.videos} ${t('videos')} · ${c.clips} ${t('clips')}`,
+            sub: `${c.videos} ${c.videos === 1 ? t('video') : t('videos')} · ${c.clips} ${c.clips === 1 ? t('clip') : t('clips')}`,
             keywords: [...c.aliases, ...c.accounts.map((a) => a.username)].filter(Boolean),
             icon: 'users',
             at: c.clips,

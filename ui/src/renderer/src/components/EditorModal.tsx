@@ -150,6 +150,10 @@ function timecode(s: number): string {
   return [h, m, sec].map((n) => String(n).padStart(2, '0')).join(':')
 }
 
+/** Narrower than this, the frame's native video controls have no room for
+ *  play, time and volume (Chromium hides them one by one). */
+const COMPACT_FRAME_W = 220
+
 const SAFE_PLATFORMS: { id: string; label: string }[] = [
   { id: 'tiktok', label: 'TikTok' },
   { id: 'reels', label: 'Reels' },
@@ -275,6 +279,18 @@ export default function EditorView({
   const [translated, setTranslated] = useState<TranslationPreview | null>(null)
   const [now, setNow] = useState(0)
   const [playing, setPlaying] = useState(false)
+  // The frame's width, watched: a 9:16 frame in a short window (800x600)
+  // is ~100px wide, where the native controls crush to a bare menu button.
+  const frameRef = useRef<HTMLDivElement>(null)
+  const [compact, setCompact] = useState(false)
+  useLayoutEffect(() => {
+    const el = frameRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => setCompact(el.clientWidth < COMPACT_FRAME_W))
+    ro.observe(el)
+    setCompact(el.clientWidth < COMPACT_FRAME_W)
+    return () => ro.disconnect()
+  }, [])
   const [safe, setSafeState] = useState<string>(() => readSafe())
   const setSafe = (v: string): void => {
     setSafeState(v)
@@ -396,6 +412,19 @@ export default function EditorView({
   }, [onClose])
 
   const duration = Math.max(0, clip.end_s - clip.start_s)
+  // With the platform's UI drawn over the clip, the native controls would sit
+  // on top of it exactly where collisions are being checked (ED-17): they go,
+  // and a compact play button under the frame (plus Space / K) takes over.
+  const safeOn = Boolean(safe && !isLandscape && PLATFORM_UI[safe])
+  // The same compact play button (and the playhead beside it) stands in for
+  // the native controls when the frame is too narrow to draw them.
+  const ownControls = safeOn || compact
+  const togglePlay = (): void => {
+    const v = videoRef.current
+    if (!v) return
+    if (v.paused) void v.play().catch(() => undefined)
+    else v.pause()
+  }
   const showKeys = (): void => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: '?', bubbles: true }))
   }
@@ -461,6 +490,7 @@ export default function EditorView({
         <section className="edit-bay-stage" aria-label={t('Preview')}>
           <div className="edit-bay-stage-inner">
             <div
+              ref={frameRef}
               className={`edit-bay-frame relative mx-auto max-w-full ${
                 isLandscape ? 'w-full aspect-video' : 'aspect-[9/16]'
               }`}
@@ -470,7 +500,8 @@ export default function EditorView({
                 key={previewSrc ?? `clip-${clip.id}`}
                 ref={videoRef}
                 src={previewSrc ? `${API_BASE}${previewSrc}` : api.mediaUrl(clip.id)}
-                controls
+                controls={!ownControls}
+                onClick={ownControls ? togglePlay : undefined}
                 autoPlay
                 className="absolute inset-0 w-full h-full object-contain edit-bay-video"
                 aria-label="Editing preview"
@@ -481,7 +512,7 @@ export default function EditorView({
                 onSeeked={(e) => setNow(e.currentTarget.currentTime)}
               />
               {/* What the apps draw over a Short, to keep text clear of it. */}
-              {safe && !isLandscape && PLATFORM_UI[safe] && (
+              {safeOn && (
                 <div className="absolute inset-0 z-[5] pointer-events-none edit-bay-safe-layer">
                   <PlatformOverlay platform={safe} />
                 </div>
@@ -508,6 +539,22 @@ export default function EditorView({
               )}
             </div>
             <div className="edit-bay-caption">
+              {ownControls && (
+                <button
+                  type="button"
+                  className="edit-bay-chip edit-bay-play"
+                  onClick={togglePlay}
+                  aria-label={playing ? t('Pause') : t('Play')}
+                  title={t('Play or pause (Space)')}
+                >
+                  <Icon name={playing ? 'pause' : 'play'} size={14} />
+                </button>
+              )}
+              {compact && (
+                <span className="t-mono text-xs text-ink" title={t('Playhead / clip length')}>
+                  {timecode(now)} <span className="text-muted">/ {timecode(duration)}</span>
+                </span>
+              )}
               <ScoreBadge score={clip.score} size="sm" />
               <span className="t-mono text-muted">
                 {timecode(clip.start_s)} → {timecode(clip.end_s)}

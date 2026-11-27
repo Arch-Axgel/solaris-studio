@@ -5,9 +5,11 @@ import { navigate, openCreate, openLayer } from '../lib/nav'
 import { useEvents } from '../lib/useEvents'
 import type { Preflight, PreflightCheck, SystemStats } from '../lib/types'
 import OpenRouterPrompt from './OpenRouterPrompt'
+import { t } from '../lib/i18n'
 import { Icon, type IconName } from './icons'
 import { Button, ProgressBar, ProgressRing, StepProgress } from './ui'
 import fullLogo from '../assets/solaris-logo-full.png'
+import { Overlay } from './ui/Overlay'
 
 const DONE_KEY = 'setup-wizard-done'
 
@@ -43,9 +45,33 @@ const LABEL: Record<string, string> = {
   disk: 'Free space'
 }
 
+/** A plain one-liner for a check. Engines report raw tool output (ffmpeg's
+ *  whole version banner, "no transcription weights bundled"): the full text
+ *  stays in the tooltip, the row says what it means. */
+function checkSummary(check: PreflightCheck): string {
+  const d = (check.detail ?? '').trim()
+  if (check.name === 'ffmpeg' || check.name === 'ffprobe') {
+    if (!check.ok) return d
+    const v = d.match(/^n?(\d+(?:\.\d+)*)/)
+    return v ? `${t('Installed')} · ${t('version')} ${v[1]}` : t('Installed')
+  }
+  if ((check.name === 'whisper' || check.name === 'transcription') && !check.ok && /weights|not (?:bundled|downloaded)/i.test(d))
+    return t('Downloads with your first video')
+  return d.replace(/\s*Copyright.*$/i, '')
+}
+
+// Start fetching the logo as soon as this module loads, so the welcome step
+// doesn't show an empty glow while the image is still on its way.
+if (typeof Image !== 'undefined') {
+  const pre = new Image()
+  pre.decoding = 'async'
+  pre.src = fullLogo
+}
+
 function CheckRow({ check, index = 0 }: { check: PreflightCheck; index?: number }): JSX.Element {
   const state = check.ok ? 'ok' : check.blocking ? 'bad' : 'warn'
   const icon: IconName = state === 'ok' ? 'check' : state === 'bad' ? 'x' : 'alert'
+  const summary = checkSummary(check)
   return (
     <div className="wiz-check" data-state={state} style={{ '--i': Math.min(index, 12) } as React.CSSProperties}>
       <span
@@ -58,7 +84,7 @@ function CheckRow({ check, index = 0 }: { check: PreflightCheck; index?: number 
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-ink">{LABEL[check.name] ?? check.name}</p>
         <p className="text-xs text-muted truncate" title={check.detail}>
-          {check.detail}
+          {summary}
         </p>
         {!check.ok && check.fix && <p className="text-xs text-gold mt-1">{check.fix}</p>}
       </div>
@@ -85,6 +111,7 @@ export default function SetupWizard({ onClose }: { onClose: () => void }): JSX.E
   const [pullStatus, setPullStatus] = useState<string | null>(null)
   const [pullPct, setPullPct] = useState<number | null>(null)
   const [error, setError] = useState('')
+  const [logoReady, setLogoReady] = useState(false)
   const finishRef = useRef<HTMLDivElement>(null)
 
   const refresh = useCallback(async (): Promise<void> => {
@@ -135,6 +162,21 @@ export default function SetupWizard({ onClose }: { onClose: () => void }): JSX.E
   const check = (name: string): PreflightCheck | undefined => checks.find((c) => c.name === name)
   const ollamaOk = check('ollama')?.ok ?? false
   const modelOk = check('model')?.ok ?? false
+  // The AI runs locally only when the engine reports the bundled runtime.
+  // On a cloud provider (OpenRouter on the user's own key) the 'ai' check
+  // carries the whole answer and there is nothing to download.
+  const localAI = !!check('ollama') || !!check('model')
+  const aiCheck = check('ai')
+  const cloudReady = !localAI && !!aiCheck?.ok
+  // /system/stats can come back without a GPU reading while the preflight's
+  // own GPU check sees the card; trust whichever one actually found it.
+  const gpuCheck = check('gpu')
+  const gpuName = stats?.gpu?.name ?? (gpuCheck?.ok ? gpuCheck.detail : null)
+  const gpuVram = (() => {
+    if (stats?.gpu?.vram_total) return stats.gpu.vram_total
+    const m = gpuCheck?.ok ? gpuCheck.detail.match(/([\d.]+)\s*GB/i) : null
+    return m ? parseFloat(m[1]) * 1024 ** 3 : 0
+  })()
 
   // A pull is server-side and survives this component, so "have we already
   // asked for one" is not something the render state can be trusted for —
@@ -188,7 +230,9 @@ export default function SetupWizard({ onClose }: { onClose: () => void }): JSX.E
   const ringValue = modelOk ? 1 : pullPct !== null ? pullPct / 100 : step === 1 && pullStatus ? null : 0
 
   return (
-    <div className="wiz-overlay" role="dialog" aria-modal="true" aria-labelledby="wiz-title">
+    // A native modal in the top layer (components/ui/Overlay): the app behind
+    // is inert, focus stays in the wizard, toasts and Esc can't fall through.
+    <Overlay onClose={() => undefined} escCloses={false} backdropCloses={false} labelledBy="wiz-title" className="wiz-overlay">
       <span className="wiz-letterbox wiz-letterbox-top" aria-hidden />
       <span className="wiz-letterbox wiz-letterbox-bottom" aria-hidden />
       {/* Never taller than the window: the steps scroll inside, and the
@@ -200,9 +244,6 @@ export default function SetupWizard({ onClose }: { onClose: () => void }): JSX.E
         </div>
 
         <div className="wiz-body flex-1 min-h-0 overflow-y-auto">
-          <p className="t-micro mb-2">
-            Step {step + 1} of {steps.length} · {steps[step]}
-          </p>
 
           {/* ---------------------------------------------- 0: welcome */}
           {step === 0 && (
@@ -219,6 +260,13 @@ export default function SetupWizard({ onClose }: { onClose: () => void }): JSX.E
                   width={176}
                   height={176}
                   className="wiz-logo"
+                  decoding="async"
+                  // Fades in once decoded instead of popping in over the glow.
+                  ref={(el) => {
+                    if (el?.complete && el.naturalWidth > 0 && !logoReady) setLogoReady(true)
+                  }}
+                  onLoad={() => setLogoReady(true)}
+                  style={{ opacity: logoReady ? 1 : 0, transition: 'opacity var(--dur-4, 320ms) var(--ease-out, ease-out)' }}
                 />
               </div>
               <h2 id="wiz-title" className="t-xl text-ink text-center">
@@ -258,11 +306,17 @@ export default function SetupWizard({ onClose }: { onClose: () => void }): JSX.E
                 </div>
                 <div className="min-w-0">
                   <h2 id="wiz-title" className="t-xl text-ink">Setting up</h2>
-                  <p className="text-sm text-muted mt-1 leading-relaxed">
-                    Everything Solaris Studio needs came with it, apart from the AI model that picks
-                    the moments worth clipping. We&apos;re fetching the one that suits your graphics
-                    card now — it downloads once and then works offline.
-                  </p>
+                  {cloudReady ? (
+                    <p className="text-sm text-muted mt-1 leading-relaxed">
+                      {t('Everything Solaris Studio needs came with it, and your AI is already set up, so there is nothing to download. Here is what we checked.')}
+                    </p>
+                  ) : (
+                    <p className="text-sm text-muted mt-1 leading-relaxed">
+                      Everything Solaris Studio needs came with it, apart from the AI model that picks
+                      the moments worth clipping. We&apos;re fetching the one that suits your graphics
+                      card now — it downloads once and then works offline.
+                    </p>
+                  )}
                 </div>
               </div>
               {/* For the old laptop or low-spec mini PC that cannot run the
@@ -271,9 +325,10 @@ export default function SetupWizard({ onClose }: { onClose: () => void }): JSX.E
                   the model guide uses (llm/manager.recommend_for), or there is
                   no card at all. The local download carries on either way, so
                   a machine that can run it still ends up ready. */}
-              {(() => {
-                const vram = stats?.gpu?.vram_total ?? 0
-                const lowSpec = !!stats && (!stats.gpu || vram < 5.5 * 1024 ** 3)
+              {/* Only while the AI would run on this PC: someone already on
+                  OpenRouter doesn't need to be sold it. */}
+              {pre && !cloudReady && (() => {
+                const lowSpec = (!!stats || !!gpuCheck) && (!gpuName || gpuVram < 5.5 * 1024 ** 3)
                 return (
                   <OpenRouterPrompt
                     className="mt-4"
@@ -307,14 +362,31 @@ export default function SetupWizard({ onClose }: { onClose: () => void }): JSX.E
                   <div className="wiz-model mt-4">
                     <p className="text-xs text-muted flex items-center gap-1.5">
                       <Icon name="cpu" size={13} />
-                      {stats?.gpu ? `Detected: ${stats.gpu.name}` : 'No graphics card detected'}
+                      {gpuName ? `Detected: ${gpuName}` : 'No graphics card detected'}
                     </p>
-                    <p className="text-sm font-semibold text-gold-strong mt-1">
-                      {modelOk
-                        ? `✓ ${check('model')?.detail}`
-                        : `Downloading ${rec ? rec.model : '…'}`}
-                    </p>
-                    <p className="text-xs text-muted mt-1 leading-relaxed">{rec?.reason ?? ''}</p>
+                    {cloudReady ? (
+                      <p className="text-sm font-semibold text-gold-strong mt-1 flex items-center gap-1.5">
+                        <Icon name="check" size={15} className="text-success" />
+                        <span className="min-w-0">
+                          {t('AI ready')}: <span className="font-medium text-ink">{aiCheck?.detail}</span>
+                        </span>
+                      </p>
+                    ) : (
+                      <>
+                        <p className="text-sm font-semibold text-gold-strong mt-1">
+                          {modelOk
+                            ? `✓ ${check('model')?.detail}`
+                            : pullStatus
+                              ? `Downloading ${rec ? rec.model : '…'}`
+                              : rec
+                                ? `${t('AI model')}: ${rec.model}`
+                                : aiCheck && !aiCheck.ok && !localAI
+                                  ? `${t('AI not set up yet')} · ${aiCheck.detail}`
+                                  : t('Looking for the right AI model…')}
+                        </p>
+                        {rec?.reason && <p className="text-xs text-muted mt-1 leading-relaxed">{rec.reason}</p>}
+                      </>
+                    )}
 
                     {!modelOk && pullStatus && (
                       <div className="mt-3">
@@ -345,7 +417,11 @@ export default function SetupWizard({ onClose }: { onClose: () => void }): JSX.E
                   </div>
 
                   <div className="wiz-checks mt-4 stagger">
-                    {checks.map((c, i) => (
+                    {/* The box above already reports the AI and the graphics
+                        card; the list carries the rest. */}
+                    {checks
+                      .filter((c) => !(cloudReady && c.name === 'ai') && !(c.name === 'gpu' && c.ok && gpuName))
+                      .map((c, i) => (
                       <CheckRow key={c.name} check={c} index={i} />
                     ))}
                   </div>
@@ -427,9 +503,14 @@ export default function SetupWizard({ onClose }: { onClose: () => void }): JSX.E
               Back
             </Button>
           )}
-          <button className="text-xs text-muted hover:text-ink ml-auto px-2 py-1 rounded" onClick={finish}>
-            Skip setup
-          </button>
+          {/* Nothing to skip on the last step: Start clipping already does it. */}
+          {step < steps.length - 1 ? (
+            <Button variant="subtle" size="sm" className="ml-auto" onClick={finish}>
+              Skip setup
+            </Button>
+          ) : (
+            <span className="ml-auto" />
+          )}
           {step < steps.length - 1 ? (
             // No gate any more. There is nothing left for a creator to go and
             // install, so nothing they could be blocked on fixing — and the
@@ -445,6 +526,6 @@ export default function SetupWizard({ onClose }: { onClose: () => void }): JSX.E
           )}
         </div>
       </div>
-    </div>
+    </Overlay>
   )
 }

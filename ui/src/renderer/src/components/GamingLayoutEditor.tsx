@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { api, type FramePeople, type LayoutSource } from '../lib/api'
 import {
   clearZone,
@@ -18,8 +18,9 @@ import {
   type PxBox
 } from '../lib/gamingLayout'
 import { t } from '../lib/i18n'
+import { FloatingLayer, Overlay } from './ui/Overlay'
 import { dragLayer, keepOut, reshape, type Box, type Handle, type Targets } from '../lib/layerDrag'
-import { Maximize, Minimize, Restore } from './icons'
+import { Icon, Maximize, Minimize, Restore } from './icons'
 import PlatformOverlay, { PLATFORM_UI } from './PlatformOverlay'
 import type { FrameBox, GamingSettings } from '../lib/types'
 
@@ -70,7 +71,23 @@ const CARD_ORDER = [
   'duo_split'
 ] as const
 const FRAMES = [0.1, 0.3, 0.5, 0.7, 0.9]
-const COLOUR: Record<BoxRole, string> = { cam: '#38BDF8', cam2: '#A78BFA', game: '#22C55E', ui: '#F59E0B' }
+/** Box colours on the frame, from the theme: gold for the webcam, a light
+ *  rose for the game, ink for a second webcam, amber for the Game UI. Bright
+ *  enough to read on any video frame. */
+const COLOUR: Record<BoxRole, string> = { cam: '#ECC87C', cam2: '#F6EDE7', game: '#EE7FA0', ui: '#F2A65A' }
+/** Text on a coloured box label (theme base). */
+const ON_COLOUR = '#130A0D'
+/** Snap guides and the frame's middle lines. */
+const GUIDE = '#ECC87C'
+/** Blocks drawn for a layout before (or without) a frame: each part in its
+ *  colour, so the cards and the preview still show the layout. */
+const BLOCK: Record<string, string> = {
+  cam: 'rgb(236 200 124 / 0.42)',
+  cam2: 'rgb(246 237 231 / 0.3)',
+  game: 'rgb(143 36 69 / 0.75)',
+  ui: 'rgb(242 166 90 / 0.5)',
+  bg: 'rgb(46 26 33 / 1)'
+}
 const LABEL: Record<BoxRole, string> = { cam: 'Webcam', cam2: 'Webcam 2', game: 'Game', ui: 'Game UI' }
 const NEW_BOX: Record<BoxRole, FrameBox> = {
   cam: [0.02, 0.6, 0.25, 0.36],
@@ -132,14 +149,15 @@ function Composition({
   placeholderCam
 }: {
   p: GamingPlan
-  frameUrl: string
+  /** null: no frame (yet): each part is drawn as a coloured block. */
+  frameUrl: string | null
   src: { w: number; h: number }
   width: number
   placeholderCam: boolean
 }): JSX.Element {
   const k = width / OUT_W
   return (
-    <div className="relative overflow-hidden bg-black" style={{ width, height: OUT_H * k }}>
+    <div className="relative overflow-hidden" style={{ width, height: OUT_H * k, background: frameUrl ? '#000' : BLOCK.bg }}>
       {p.elements.map((e, i) => {
         const [dx, dy, dw, dh] = e.dest.map((v) => v * k)
         const box: React.CSSProperties = {
@@ -158,6 +176,18 @@ function Composition({
                 <span className="text-[10px] text-muted px-2">{t('Webcam, found by who is talking when processing')}</span>
               )}
             </div>
+          )
+        }
+        if (!frameUrl) {
+          return (
+            <div
+              key={i}
+              style={{
+                ...box,
+                background: BLOCK[e.role] ?? BLOCK.game,
+                boxShadow: e.role === 'bg' ? undefined : 'inset 0 0 0 1px rgb(246 237 231 / 0.14)'
+              }}
+            />
           )
         }
         if (e.fit === 'blur') {
@@ -193,6 +223,22 @@ function Composition({
         )
       })}
     </div>
+  )
+}
+
+/** One of the five frames to set the layout up on: a shimmer while it
+ *  loads, a film glyph if it can't be read, never an empty box. */
+function FrameThumb({ src, on, label, onPick }: { src: string; on: boolean; label: string; onPick: () => void }): JSX.Element {
+  const [state, setState] = useState<'loading' | 'ok' | 'bad'>('loading')
+  useEffect(() => setState('loading'), [src])
+  return (
+    <button type="button" className="gle-thumb" data-on={on} data-state={state} aria-label={label} aria-pressed={on} onClick={onPick}>
+      {state === 'bad' ? (
+        <Icon name="film" size={16} />
+      ) : (
+        <img src={src} alt="" loading="lazy" draggable={false} onLoad={() => setState('ok')} onError={() => setState('bad')} />
+      )}
+    </button>
   )
 }
 
@@ -271,6 +317,7 @@ export default function GamingLayoutEditor({
     }
   })
   const [mini, setMini] = useState(false)
+  const miniRef = useRef<HTMLSpanElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const [viewH, setViewH] = useState(window.innerHeight)
   const [remember, setRemember] = useState(rememberInitially)
@@ -280,6 +327,10 @@ export default function GamingLayoutEditor({
   const [src, setSrc] = useState({ w: 1920, h: 1080 })
   const [loaded, setLoaded] = useState(false)
   const [frameError, setFrameError] = useState<string | null>(null)
+  // Bumped by Retry: a fresh request for the same frames.
+  const [retry, setRetry] = useState(0)
+  const [helpOpen, setHelpOpen] = useState(false)
+  const titleId = useId()
   const [people, setPeople] = useState<FramePeople | null>(null)
   const [checking, setChecking] = useState(true)
   const [note, setNote] = useState<string | null>(null)
@@ -335,12 +386,55 @@ export default function GamingLayoutEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   useEffect(() => {
+    // Minimised, the bar floats over the page it was opened from: give that
+    // page's scroller room at the bottom so its last row can always be
+    // scrolled clear of the bar.
+    if (!mini) return
+    const bar = miniRef.current?.parentElement
+    if (!bar) return
+    // The nearest scroller that reaches down to where the bar floats: the
+    // page (or the Create sheet), not a short inner list on the way up. One
+    // that already scrolls wins, so an overflow:auto box that just grows with
+    // its content (the Create surface on narrow windows) is passed over;
+    // failing that (a page that fits), the nearest one that reaches the bar.
+    const reach = window.innerHeight - bar.offsetHeight - 40
+    const reaches = (n: HTMLElement): boolean =>
+      /(auto|scroll)/.test(getComputedStyle(n).overflowY) && n.getBoundingClientRect().bottom >= reach
+    const find = (scrolls: boolean): HTMLElement | null => {
+      let n: HTMLElement | null = bar.parentElement
+      while (n && !(reaches(n) && (!scrolls || n.scrollHeight > n.clientHeight + 1))) n = n.parentElement
+      return n
+    }
+    const el = find(true) ?? find(false)
+    if (!el) return
+    const scroller = el
+    const before = scroller.style.paddingBottom
+    const base = parseFloat(getComputedStyle(scroller).paddingBottom) || 0
+    const room = bar.offsetHeight + 32
+    // Near the bottom already: the bar would land on the last row, so follow
+    // it down into the new room.
+    const atBottom = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - room
+    scroller.style.paddingBottom = `${base + room}px`
+    if (atBottom) scroller.scrollTop = scroller.scrollHeight
+    // A scroller that stops short of the window (the Create sheet, above its
+    // footer): sit just above its bottom edge, not on the footer below it.
+    const gap = window.innerHeight - scroller.getBoundingClientRect().bottom
+    if (gap > 4) bar.style.bottom = `${gap + 12}px`
+    return () => {
+      scroller.style.paddingBottom = before
+      bar.style.bottom = ''
+    }
+  }, [mini])
+  useEffect(() => {
     // Esc belongs to this editor while it's open: out of fullscreen first,
     // then closed. Without this, inside the clip editor Esc closed the whole
     // clip editor underneath.
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape' || mini) return
       e.stopImmediatePropagation()
+      // Also cancel the browser's close request, or it lands on the Create
+      // sheet / dialog under this editor once it has closed and shuts that too.
+      e.preventDefault()
       if (document.fullscreenElement) {
         document.exitFullscreen().catch(() => undefined)
         return
@@ -354,7 +448,8 @@ export default function GamingLayoutEditor({
     return () => window.removeEventListener('keydown', onKey, true)
   }, [full, mini, onClose])
 
-  const frameUrl = api.layoutFrameUrl(source, at)
+  const withRetry = (url: string): string => (retry > 0 ? `${url}&retry=${retry}` : url)
+  const frameUrl = withRetry(api.layoutFrameUrl(source, at))
   useEffect(() => {
     setLoaded(false)
     setFrameError(null)
@@ -452,7 +547,7 @@ export default function GamingLayoutEditor({
   const shownPreset = p.preset
   const zone = safeZone(safe)
   const camEl = elementOf(p, 'cam')
-  const face =
+  const faceCheck =
     camEl && cleanHeads.cam ? faceClear(cleanHeads.cam, camEl.src, camEl.dest, camEl.shift, zone) : null
 
   const setBox = (role: BoxRole, box: FrameBox): void => setBoxes((b) => ({ ...b, [role]: box }))
@@ -681,18 +776,9 @@ export default function GamingLayoutEditor({
   if (camMode === 'draw' && boxes.cam) shownBoxes.push('cam')
 
   const segment = <V extends string>(options: [V, string][], value: V, onChange: (v: V) => void): JSX.Element => (
-    <div className="inline-flex rounded-md overflow-hidden flex-wrap border border-line/60">
+    <div className="gle-seg" role="group">
       {options.map(([v, label]) => (
-        <button
-          key={v}
-          onClick={() => onChange(v)}
-          aria-pressed={value === v}
-          className={`px-2 py-1 text-xs ${
-            value === v
-              ? 'bg-accent/30 text-gold-strong font-medium'
-              : 'bg-raised text-muted hover:text-ink hover:bg-raised/70'
-          }`}
-        >
+        <button key={v} type="button" onClick={() => onChange(v)} aria-pressed={value === v}>
           {t(label)}
         </button>
       ))}
@@ -700,60 +786,101 @@ export default function GamingLayoutEditor({
   )
 
   const zoneLabel = SAFE_ZONES[safe]?.label ?? 'TikTok'
-  const faceText = !camEl
+  const face: { tone: 'ok' | 'warn' | 'muted'; text: string } | null = !camEl
     ? null
     : camUnknown
-      ? t('The face is placed when the webcam is found.')
-      : !face && checking
-        ? t('Checking the face…')
-        : !face
-          ? t('No face on this frame to check. Try another frame.')
-          : face.top && face.bottom
-            ? `✓ ${t('Face clear of')} ${zoneLabel}${t('’s UI')}`
-            : !face.top
-              ? `⚠ ${t('Head under')} ${zoneLabel}${t('’s top bar')}`
-              : `⚠ ${t('Chin under')} ${zoneLabel}${t('’s captions')}${order === 'game_top' ? ` — ${t('try Camera top')}` : ''}`
+      ? { tone: 'muted', text: t('The face is placed when the webcam is found.') }
+      : !faceCheck && checking
+        ? { tone: 'muted', text: t('Checking the face…') }
+        : !faceCheck
+          ? { tone: 'muted', text: t('No face on this frame to check. Try another frame.') }
+          : faceCheck.top && faceCheck.bottom
+            ? { tone: 'ok', text: `${t('Face clear of')} ${zoneLabel}${t('’s UI')}` }
+            : !faceCheck.top
+              ? { tone: 'warn', text: `${t('Head under')} ${zoneLabel}${t('’s top bar')}` }
+              : {
+                  tone: 'warn',
+                  text: `${t('Chin under')} ${zoneLabel}${t('’s captions')}${order === 'game_top' ? ` — ${t('try Camera top')}` : ''}`
+                }
+
+  /** Another of the five frames than the one shown: after a failed read. */
+  const nextFrame = (): void => {
+    const i = FRAMES.findIndex((f) => Math.abs(f - at) < 0.001)
+    const f = FRAMES[(i + 1) % FRAMES.length]
+    setAt(f)
+    setScrub(f)
+  }
 
   const title = context === 'video' ? t('Choose a layout before processing') : t('Gaming / Reaction layout')
   if (mini)
     return (
-      <div
-        className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-xl border border-line/60 bg-surface shadow-2xl pl-3 pr-1.5 py-1.5 text-sm"
+      // Top layer (non-modal): stays above the rail, sheets and the Edit Bay
+      // panel. Docked bottom-left, just clear of the rail, so it never sits
+      // under the toasts (bottom-right); the page gets room below its last
+      // row while it's here (see the effect above).
+      <FloatingLayer
+        className="gle-mini bottom-5 left-[calc(var(--rail-col,var(--rail-w-collapsed))+16px)] max-w-[calc(100vw-var(--rail-col,var(--rail-w-collapsed))-32px)]"
         role="dialog"
         aria-label={t('Choose a layout')}
       >
-        <button className="font-semibold hover:text-gold" onClick={() => setMini(false)} title={t('Restore')}>
+        <span ref={miniRef} className="gle-mini-icon" aria-hidden>
+          <Icon name="grid" size={15} />
+        </span>
+        <button type="button" className="gle-mini-title" onClick={() => setMini(false)} title={t('Restore')}>
           {title}
         </button>
-        <button className="btn-ghost !py-1 !px-2 text-xs" onClick={() => setMini(false)}>
-          {t('Restore')}
+        <button type="button" className="btn-ghost ui-btn ui-btn-sm" onClick={() => setMini(false)}>
+          <Restore size={14} />
+          <span className="ui-btn-label">{t('Restore')}</span>
         </button>
-        <button className="text-muted hover:text-ink px-1.5 text-lg leading-none" onClick={onClose} aria-label={t('Close')}>
-          ✕
+        <button type="button" className="btn-icon ui-icon-sm" onClick={onClose} aria-label={t('Close')} title={t('Close')}>
+          <Icon name="x" size={15} />
         </button>
-      </div>
+      </FloatingLayer>
     )
 
+  const help = t(
+    'Pick a moment where the webcam and the game both show. Drag a box to move it, any handle to resize it; it snaps to the middle, the edges and the other boxes (hold Alt to place it freely). The dashed line inside is what the layout will actually show.'
+  )
+
   return (
-    <div
-      className={`fixed inset-0 z-50 bg-base/80 backdrop-blur-sm flex items-center justify-center select-none ${full ? '' : 'p-4'}`}
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-label={t('Choose a layout')}
+    // A native modal in the top layer: above the rail, top bar, Create sheet
+    // and Edit Bay panel whatever their transforms; the app behind is inert.
+    // Esc stays with the keydown handler above (fullscreen first, then close).
+    <Overlay
+      onClose={onClose}
+      escCloses={false}
+      labelledBy={titleId}
+      initialFocus='.gle-card[aria-checked="true"]'
+      className={`select-none ${full ? '' : 'p-3 sm:p-4'}`}
     >
-      <div
-        ref={panelRef}
-        className={`bg-surface overflow-y-auto space-y-3 p-4 ${
-          full ? 'w-full h-full' : 'border border-line rounded-2xl shadow-2xl w-full max-w-[1280px] max-h-full'
-        }`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between gap-2">
-          <p className="font-semibold text-ink">{title}</p>
-          <div className="flex items-center gap-1 text-muted">
+      <div ref={panelRef} className="gle" data-full={full ? 'true' : undefined} onClick={(e) => e.stopPropagation()}>
+        {/* ---- header: always in view ---- */}
+        <header className="gle-head">
+          <span className="gle-head-icon" aria-hidden>
+            <Icon name="grid" size={18} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="t-micro">{context === 'video' ? t('Gaming / Reaction') : t('Clip editor')}</p>
+            <h2 id={titleId} className="t-lg text-ink truncate">
+              {title}
+            </h2>
+          </div>
+          <div className="gle-tools">
             <button
-              className="hover:text-gold-strong hover:bg-raised/70 rounded p-1.5 transition-colors"
+              type="button"
+              className="gle-grid-toggle"
+              aria-pressed={showGrid}
+              onClick={() => setShowGrid((g) => !g)}
+              title={t('Grid lines: thirds and the middle. Boxes snap to them.')}
+            >
+              <Icon name="grid" size={15} />
+              <span>{t('Grid')}</span>
+            </button>
+            <span className="gle-tools-rule" aria-hidden />
+            <button
+              type="button"
+              className="btn-icon"
               onClick={minimise}
               aria-label={t('Minimise')}
               title={t('Minimise: a bar in the corner, to get at the app')}
@@ -761,552 +888,567 @@ export default function GamingLayoutEditor({
               <Minimize size={16} />
             </button>
             <button
-              className="hover:text-gold-strong hover:bg-raised/70 rounded p-1.5 transition-colors"
+              type="button"
+              className="btn-icon"
               onClick={toggleFull}
               aria-label={full ? t('Exit fullscreen') : t('Fullscreen')}
               title={full ? t('Exit fullscreen (Esc)') : t('Fullscreen')}
             >
               {full ? <Restore size={16} /> : <Maximize size={16} />}
             </button>
-            <button className="hover:text-gold-strong hover:bg-raised/70 rounded px-2 py-0.5 text-lg leading-none transition-colors" onClick={onClose} aria-label={t('Close')}>
-              ✕
+            <button type="button" className="btn-icon" onClick={onClose} aria-label={t('Close')} title={t('Close')}>
+              <Icon name="x" size={18} />
             </button>
           </div>
-        </div>
+        </header>
 
-        <div className="flex gap-4 items-start">
-          {/* ---- layouts ---- */}
-          <div className="shrink-0 w-[222px]">
-            <p className="label mb-1.5">{t('Layouts')}</p>
-            <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label={t('Layouts')}>
-              {CARD_ORDER.map((id) => {
-                const cardPlan = plan(
-                  src.w,
-                  src.h,
-                  {
-                    ...settingsFor(id),
-                    order: preset === id ? order : ((PRESETS[id].order as string) ?? 'cam_top'),
-                    divider: preset === id ? divider : undefined,
-                    ui_box: boxes.ui ?? NEW_BOX.ui,
-                    cam2: boxes.cam2 ?? NEW_BOX.cam2
-                  },
-                  cleanHeads
-                )
-                const selected = preset === id
-                return (
-                  <button
-                    key={id}
-                    role="radio"
-                    aria-checked={selected}
-                    onClick={() => pick(id)}
-                    className={`rounded-lg p-1 text-[10px] flex flex-col items-center gap-1 border ${
-                      selected
-                        ? 'border-gold/60 bg-accent/20 text-gold-strong'
-                        : 'border-line/60 bg-raised/40 hover:border-gold/40 text-muted'
-                    }`}
-                    title={t(PRESETS[id].label)}
-                  >
-                    <span className="truncate w-full text-center">{t(PRESETS[id].label)}</span>
-                    {loaded ? (
-                      <Composition p={cardPlan} frameUrl={frameUrl} src={src} width={56} placeholderCam={camUnknown} />
-                    ) : (
-                      <div className="bg-black" style={{ width: 56, height: 100 }} />
-                    )}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* ---- the frame ---- */}
-          <div className="flex-1 min-w-0 space-y-2">
-            <div className="flex items-start gap-2">
-              <p className="text-xs text-muted flex-1">
-                {t(
-                  'Pick a moment where the webcam and the game both show. Drag a box to move it, any handle to resize it; it snaps to the middle, the edges and the other boxes (hold Alt to place it freely). The dashed line inside is what the layout will actually show.'
-                )}
+        {/* ---- body: the one part that scrolls ---- */}
+        <div className="gle-body">
+          <div className="gle-grid">
+            {/* ---- layouts ---- */}
+            <section className="gle-layouts" aria-labelledby={`${titleId}-layouts`}>
+              <p id={`${titleId}-layouts`} className="label mb-2">
+                {t('Layouts')}
               </p>
-              <button
-                className={`shrink-0 px-1.5 py-0.5 rounded text-[11px] border ${showGrid ? 'bg-accent/20 border-gold/60 text-gold-strong' : 'bg-raised border-line/60 text-muted hover:text-ink hover:border-gold/40'}`}
-                aria-pressed={showGrid}
-                onClick={() => setShowGrid((g) => !g)}
-                title={t('Grid lines: thirds and the middle. Boxes snap to them.')}
+              <div className="gle-cards" role="radiogroup" aria-label={t('Layouts')}>
+                {CARD_ORDER.map((id) => {
+                  const cardPlan = plan(
+                    src.w,
+                    src.h,
+                    {
+                      ...settingsFor(id),
+                      order: preset === id ? order : ((PRESETS[id].order as string) ?? 'cam_top'),
+                      divider: preset === id ? divider : undefined,
+                      ui_box: boxes.ui ?? NEW_BOX.ui,
+                      cam2: boxes.cam2 ?? NEW_BOX.cam2
+                    },
+                    cleanHeads
+                  )
+                  const selected = preset === id
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      onClick={() => pick(id)}
+                      className="gle-card"
+                      title={t(PRESETS[id].label)}
+                    >
+                      <span className="gle-card-art">
+                        <Composition
+                          p={cardPlan}
+                          frameUrl={loaded ? frameUrl : null}
+                          src={src}
+                          width={56}
+                          placeholderCam={camUnknown}
+                        />
+                      </span>
+                      <span className="gle-card-name">{t(PRESETS[id].label)}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </section>
+
+            {/* ---- the frame ---- */}
+            <section className="gle-frame min-w-0">
+              <div className="gle-help">
+                <p className={helpOpen ? '' : 'line-clamp-2'}>{help}</p>
+                <button type="button" className="gle-help-more" aria-expanded={helpOpen} onClick={() => setHelpOpen((o) => !o)}>
+                  {helpOpen ? t('Less') : t('More')}
+                </button>
+              </div>
+              <div
+                ref={frameRef}
+                className="gle-stage relative select-none touch-none overflow-hidden"
+                style={{ aspectRatio: `${src.w} / ${src.h}` }}
+                onPointerMove={onMove}
+                onPointerUp={() => {
+                  drag.current = null
+                  setPlacing(null)
+                  setFrameGuides({ xs: [], ys: [] })
+                }}
+                onPointerCancel={() => {
+                  drag.current = null
+                  setPlacing(null)
+                  setFrameGuides({ xs: [], ys: [] })
+                }}
               >
-                {t('Grid')}
-              </button>
-            </div>
-            <div
-              ref={frameRef}
-              className="relative select-none touch-none bg-base rounded-lg overflow-hidden"
-              style={{ aspectRatio: `${src.w} / ${src.h}` }}
-              onPointerMove={onMove}
-              onPointerUp={() => {
-                drag.current = null
-                setPlacing(null)
-                setFrameGuides({ xs: [], ys: [] })
-              }}
-              onPointerCancel={() => {
-                drag.current = null
-                setPlacing(null)
-                setFrameGuides({ xs: [], ys: [] })
-              }}
-            >
-              {frameError ? (
-                <p className="p-8 text-sm text-error">{frameError}</p>
-              ) : (
-                <>
-                  {!loaded && <p className="absolute inset-0 p-8 text-sm text-muted">{t('Loading the frame…')}</p>}
-                  <img
-                    src={frameUrl}
-                    alt={t('A frame of the video')}
-                    className={`w-full h-full block ${loaded ? '' : 'invisible'}`}
-                    draggable={false}
-                    onLoad={(e) => {
-                      setLoaded(true)
-                      setSrc({
-                        w: (e.target as HTMLImageElement).naturalWidth || 1920,
-                        h: (e.target as HTMLImageElement).naturalHeight || 1080
-                      })
-                    }}
-                    onError={() => {
-                      fetch(frameUrl)
-                        .then(async (r) => setFrameError((await r.json().catch(() => ({}))).detail || t('Couldn’t read a frame.')))
-                        .catch(() => setFrameError(t('Couldn’t reach Solaris Studio’s engine for a frame.')))
-                    }}
-                  />
-                </>
-              )}
-              {loaded && camMode === 'auto' && found && (
-                <div
-                  className="absolute pointer-events-none"
-                  style={{
-                    left: `${found[0] * 100}%`,
-                    top: `${found[1] * 100}%`,
-                    width: `${found[2] * 100}%`,
-                    height: `${found[3] * 100}%`,
-                    border: `2px dashed ${COLOUR.cam}`
-                  }}
-                >
-                  <span className="absolute top-0 left-0 text-[10px] px-1 rounded-br" style={{ background: COLOUR.cam, color: '#0B1220' }}>
-                    {t('Found automatically')}
-                  </span>
-                </div>
-              )}
-              {/* What each element will actually show: the crops from the plan. */}
-              {loaded &&
-                p.elements.map((e, i) =>
-                  (e.role === 'cam' && camUnknown) || e.role === 'bg' || (e.role === 'game' && !boxes.game) ? null : (
-                    <div
-                      key={`crop${i}`}
-                      className="absolute pointer-events-none"
-                      style={{
-                        left: `${(e.src[0] / src.w) * 100}%`,
-                        top: `${(e.src[1] / src.h) * 100}%`,
-                        width: `${(e.src[2] / src.w) * 100}%`,
-                        height: `${(e.src[3] / src.h) * 100}%`,
-                        border: `1px dashed ${COLOUR[e.role as BoxRole] ?? '#fff'}`,
-                        opacity: 0.9
+                {frameError ? (
+                  <div className="gle-stage-state" role="alert">
+                    <span className="gle-stage-icon" aria-hidden>
+                      <Icon name="alert" size={20} />
+                    </span>
+                    <p className="text-sm text-ink font-medium">{frameError}</p>
+                    <p className="text-xs text-muted max-w-sm">
+                      {t('The video may still be downloading. Try again, or pick another moment.')}
+                    </p>
+                    <div className="flex flex-wrap justify-center gap-2 mt-1">
+                      <button type="button" className="btn-ghost ui-btn ui-btn-sm" onClick={() => setRetry((r) => r + 1)}>
+                        <Icon name="retry" size={14} />
+                        <span className="ui-btn-label">{t('Retry')}</span>
+                      </button>
+                      <button type="button" className="btn-subtle ui-btn ui-btn-sm" onClick={nextFrame}>
+                        <span className="ui-btn-label">{t('Try another moment')}</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {!loaded && (
+                      <div className="gle-stage-state" aria-live="polite">
+                        <span className="skeleton absolute inset-0" aria-hidden style={{ borderRadius: 0 }} />
+                        <span className="home-spinner relative" aria-hidden />
+                        <p className="relative text-sm text-muted">{t('Loading the frame…')}</p>
+                      </div>
+                    )}
+                    <img
+                      src={frameUrl}
+                      alt={t('A frame of the video')}
+                      className={`w-full h-full block ${loaded ? '' : 'invisible'}`}
+                      draggable={false}
+                      onLoad={(e) => {
+                        setLoaded(true)
+                        setSrc({
+                          w: (e.target as HTMLImageElement).naturalWidth || 1920,
+                          h: (e.target as HTMLImageElement).naturalHeight || 1080
+                        })
+                      }}
+                      onError={() => {
+                        fetch(frameUrl)
+                          .then(async (r) => setFrameError((await r.json().catch(() => ({}))).detail || t('Couldn’t read a frame.')))
+                          .catch(() => setFrameError(t('Couldn’t reach Solaris Studio’s engine for a frame.')))
                       }}
                     />
-                  )
+                  </>
                 )}
-              {loaded &&
-                !boxes.game &&
-                (panels ?? []).map(([x, y, w, h], i) => (
+                {loaded && camMode === 'auto' && found && (
                   <div
-                    key={`panel${i}`}
-                    className="absolute pointer-events-none flex items-start justify-end"
+                    className="absolute pointer-events-none"
                     style={{
-                      left: `${x * 100}%`,
-                      top: `${y * 100}%`,
-                      width: `${w * 100}%`,
-                      height: `${h * 100}%`,
-                      background: 'repeating-linear-gradient(45deg, rgba(239,68,68,0.28) 0 6px, transparent 6px 12px)',
-                      outline: '1px solid rgba(239,68,68,0.8)'
+                      left: `${found[0] * 100}%`,
+                      top: `${found[1] * 100}%`,
+                      width: `${found[2] * 100}%`,
+                      height: `${found[3] * 100}%`,
+                      border: `2px dashed ${COLOUR.cam}`
                     }}
                   >
-                    <span className="text-[10px] px-1 rounded-bl bg-error text-base">{t('Left out')}</span>
+                    <span className="absolute top-0 left-0 text-[10px] px-1 rounded-br" style={{ background: COLOUR.cam, color: ON_COLOUR }}>
+                      {t('Found automatically')}
+                    </span>
                   </div>
-                ))}
-              {loaded &&
-                shownBoxes.map((role) => {
-                  const [x, y, w, h] = (role === 'game' ? gameBox ?? autoGame : boxes[role]) as FrameBox
-                  return (
+                )}
+                {/* What each element will actually show: the crops from the plan. */}
+                {loaded &&
+                  p.elements.map((e, i) =>
+                    (e.role === 'cam' && camUnknown) || e.role === 'bg' || (e.role === 'game' && !boxes.game) ? null : (
+                      <div
+                        key={`crop${i}`}
+                        className="absolute pointer-events-none"
+                        style={{
+                          left: `${(e.src[0] / src.w) * 100}%`,
+                          top: `${(e.src[1] / src.h) * 100}%`,
+                          width: `${(e.src[2] / src.w) * 100}%`,
+                          height: `${(e.src[3] / src.h) * 100}%`,
+                          border: `1px dashed ${COLOUR[e.role as BoxRole] ?? '#fff'}`,
+                          opacity: 0.9
+                        }}
+                      />
+                    )
+                  )}
+                {loaded &&
+                  !boxes.game &&
+                  (panels ?? []).map(([x, y, w, h], i) => (
                     <div
-                      key={role}
-                      className="absolute cursor-move"
+                      key={`panel${i}`}
+                      className="absolute pointer-events-none flex items-start justify-end"
                       style={{
                         left: `${x * 100}%`,
                         top: `${y * 100}%`,
                         width: `${w * 100}%`,
                         height: `${h * 100}%`,
-                        // An outline, not a border: the handles then sit exactly on the edge.
-                        outline: `3px solid ${COLOUR[role]}`,
-                        outlineOffset: -3,
-                        boxShadow: active === role ? `0 0 0 2px ${COLOUR[role]}55` : 'none'
+                        background: 'repeating-linear-gradient(45deg, rgb(242 122 132 / 0.28) 0 6px, transparent 6px 12px)',
+                        outline: '1px solid rgb(242 122 132 / 0.8)'
                       }}
-                      onPointerDown={(e) => startDrag(e, role, 'move')}
                     >
-                      <span
-                        className={`absolute left-0 text-[11px] font-semibold px-1.5 leading-4 ${
-                          role === 'game' ? 'bottom-0 rounded-tr' : 'top-0 rounded-br'
-                        }`}
-                        style={{ background: COLOUR[role], color: '#0B1220' }}
+                      <span className="text-[10px] px-1 rounded-bl bg-error text-base">{t('Left out')}</span>
+                    </div>
+                  ))}
+                {loaded &&
+                  shownBoxes.map((role) => {
+                    const [x, y, w, h] = (role === 'game' ? gameBox ?? autoGame : boxes[role]) as FrameBox
+                    return (
+                      <div
+                        key={role}
+                        className="absolute cursor-move"
+                        style={{
+                          left: `${x * 100}%`,
+                          top: `${y * 100}%`,
+                          width: `${w * 100}%`,
+                          height: `${h * 100}%`,
+                          // An outline, not a border: the handles then sit exactly on the edge.
+                          outline: `3px solid ${COLOUR[role]}`,
+                          outlineOffset: -3,
+                          boxShadow: active === role ? `0 0 0 2px ${COLOUR[role]}55` : 'none'
+                        }}
+                        onPointerDown={(e) => startDrag(e, role, 'move')}
                       >
-                        {t(LABEL[role])}
-                      </span>
-                      {HANDLES.map(([handle, fx, fy, cursor]) => (
                         <span
-                          key={handle}
-                          className="absolute w-3 h-3 -ml-1.5 -mt-1.5 rounded-full border-2 border-white shadow"
-                          style={{ left: `${fx * 100}%`, top: `${fy * 100}%`, background: COLOUR[role], cursor }}
-                          onPointerDown={(e) => startDrag(e, role, handle)}
-                        />
-                      ))}
-                    </div>
-                  )
-                })}
-              {loaded && placing === 'game' && (
-                <div className="absolute inset-0 pointer-events-none">
-                  {camWalls.flatMap(([x, y, w, h], i) => [
-                    ...[x, x + w].map((v) => (
-                      <div key={`wx${i}${v}`} className="absolute top-0 bottom-0 border-l-2 border-dashed" style={{ left: `${v * 100}%`, borderColor: COLOUR.cam }} />
-                    )),
-                    ...[y, y + h].map((v) => (
-                      <div key={`wy${i}${v}`} className="absolute left-0 right-0 border-t-2 border-dashed" style={{ top: `${v * 100}%`, borderColor: COLOUR.cam }} />
-                    ))
-                  ])}
-                </div>
-              )}
-              {loaded && (showGrid || placing) && (
-                <div className="absolute inset-0 pointer-events-none">
-                  {[1 / 3, 2 / 3].map((f) => (
-                    <div key={`gx${f}`} className="absolute top-0 bottom-0 border-l border-dashed border-white/40" style={{ left: `${f * 100}%` }} />
-                  ))}
-                  {[1 / 3, 2 / 3].map((f) => (
-                    <div key={`gy${f}`} className="absolute left-0 right-0 border-t border-dashed border-white/40" style={{ top: `${f * 100}%` }} />
-                  ))}
-                  <div className="absolute top-0 bottom-0 border-l border-sky-400/70" style={{ left: '50%' }} />
-                  <div className="absolute left-0 right-0 border-t border-sky-400/70" style={{ top: '50%' }} />
-                </div>
-              )}
-              {frameGuides.xs.map((x) => (
-                <div key={`fx${x}`} className="absolute top-0 bottom-0 border-l-2 border-pink-400 pointer-events-none" style={{ left: `${x * 100}%` }} />
-              ))}
-              {frameGuides.ys.map((y) => (
-                <div key={`fy${y}`} className="absolute left-0 right-0 border-t-2 border-pink-400 pointer-events-none" style={{ top: `${y * 100}%` }} />
-              ))}
-            </div>
-
-            {/* ---- scrubbing through the video ---- */}
-            <div className="flex items-center gap-2 text-xs text-muted">
-              <span className="shrink-0">{t('Moment')}</span>
-              <input
-                type="range"
-                min={0.02}
-                max={0.98}
-                step={0.01}
-                value={scrub}
-                className="flex-1 accent-accent-strong"
-                aria-label={t('Moment in the video')}
-                onChange={(e) => setScrub(Number(e.target.value))}
-                onPointerUp={() => setAt(scrub)}
-                onKeyUp={() => setAt(scrub)}
-              />
-            </div>
-            <div className="flex gap-2" role="group" aria-label={t('Frames')}>
-              {FRAMES.map((f, i) => (
-                <button
-                  key={f}
-                  onClick={() => {
-                    setAt(f)
-                    setScrub(f)
-                  }}
-                  className={`flex-1 aspect-video rounded-md overflow-hidden bg-base border-2 ${
-                    Math.abs(at - f) < 0.001 ? 'border-gold' : 'border-transparent hover:border-gold/40'
-                  }`}
-                  aria-label={`${t('Frame')} ${i + 1}`}
-                >
-                  <img
-                    src={api.layoutFrameUrl(source, f)}
-                    alt=""
-                    loading="lazy"
-                    className="w-full h-full object-cover"
-                    onError={(e) => ((e.target as HTMLImageElement).style.visibility = 'hidden')}
-                  />
-                </button>
-              ))}
-            </div>
-            {note && <p className="text-xs text-gold">{note}</p>}
-            {gameOverCam && (
-              <p className="text-xs text-warn">
-                {t('The game box runs into the webcam, so part of the webcam shows in the game too. Drag the game box off it: it stops at the webcam’s dashed line (hold Alt to place it freely).')}
-              </p>
-            )}
-          </div>
-
-          {/* ---- the result ---- */}
-          <div className="shrink-0 space-y-2 text-xs" style={{ width: PW + 18 }}>
-            <div className="flex items-center justify-between">
-              <p className="label">{t('Preview')}</p>
-              <button
-                className={`px-1.5 py-0.5 rounded text-[11px] border ${showGrid ? 'bg-accent/20 border-gold/60 text-gold-strong' : 'bg-raised border-line/60 text-muted hover:text-ink hover:border-gold/40'}`}
-                aria-pressed={showGrid}
-                onClick={() => setShowGrid((g) => !g)}
-                title={t('Grid lines: thirds and the middle. Parts snap to them.')}
-              >
-                {t('Grid')}
-              </button>
-              <select
-                className="input !py-0.5 !w-36 text-xs"
-                value={safe}
-                onChange={(e) => setSafe(e.target.value)}
-                aria-label={t('Platform whose UI to show')}
-              >
-                {Object.entries(SAFE_ZONES).map(([id, z]) => (
-                  <option key={id} value={id}>
-                    {id === 'none' ? t('No overlay') : `${z.label} ${t('preview')}`}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div
-              ref={previewRef}
-              className="relative rounded-lg overflow-hidden touch-none"
-              style={{ width: PW, height: OUT_H * k }}
-              onPointerMove={onPreviewMove}
-              onPointerUp={endDrags}
-              onPointerCancel={endDrags}
-              onPointerDown={() => setSelected(null)}
-            >
-              {loaded ? (
-                <Composition p={p} frameUrl={frameUrl} src={src} width={PW} placeholderCam={camUnknown} />
-              ) : (
-                <div className="bg-black w-full h-full" />
-              )}
-              {/* What the app draws over the Short: the real layout for one
-                  platform; the three platforms' shared no-go areas for "All". */}
-              {PLATFORM_UI[safe] && <PlatformOverlay platform={safe} />}
-              {showGrid && (
-                <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox={`0 0 ${OUT_W} ${OUT_H}`} preserveAspectRatio="none">
-                  {[OUT_W / 3, (2 * OUT_W) / 3].map((x) => (
-                    <line key={`gx${x}`} x1={x} x2={x} y1={0} y2={OUT_H} stroke="white" strokeOpacity={0.35} strokeWidth={3} strokeDasharray="14 10" />
-                  ))}
-                  {[OUT_H / 3, (2 * OUT_H) / 3].map((y) => (
-                    <line key={`gy${y}`} x1={0} x2={OUT_W} y1={y} y2={y} stroke="white" strokeOpacity={0.35} strokeWidth={3} strokeDasharray="14 10" />
-                  ))}
-                  <line x1={OUT_W / 2} x2={OUT_W / 2} y1={0} y2={OUT_H} stroke="#38BDF8" strokeOpacity={0.6} strokeWidth={3} />
-                  <line x1={0} x2={OUT_W} y1={OUT_H / 2} y2={OUT_H / 2} stroke="#38BDF8" strokeOpacity={0.6} strokeWidth={3} />
-                  {safe !== 'none' && (
-                    <rect
-                      x={zone.left}
-                      y={zone.top}
-                      width={OUT_W - zone.left - zone.right}
-                      height={OUT_H - zone.top - zone.bottom}
-                      fill="none"
-                      stroke="#FACC15"
-                      strokeOpacity={0.7}
-                      strokeWidth={3}
-                      strokeDasharray="20 12"
-                    />
-                  )}
-                </svg>
-              )}
-              {safe === 'all' && (
-                <>
-                  <div
-                    className="absolute left-0 right-0 top-0 bg-white/15 border-b border-white/40 pointer-events-none flex items-start justify-center"
-                    style={{ height: zone.top * k }}
-                  >
-                    <span className="text-[9px] text-white/80 mt-0.5">{t('Top bar')}</span>
-                  </div>
-                  <div
-                    className="absolute left-0 right-0 bottom-0 bg-white/15 border-t border-white/40 pointer-events-none flex items-end justify-center"
-                    style={{ height: zone.bottom * k }}
-                  >
-                    <span className="text-[9px] text-white/80 mb-0.5">{t('Captions and buttons')}</span>
-                  </div>
-                  <div
-                    className="absolute right-0 bg-white/10 border-l border-white/30 pointer-events-none"
-                    style={{ width: zone.right * k, top: zone.top * k, bottom: zone.bottom * k }}
-                  />
-                </>
-              )}
-              {loaded &&
-                layers.map((e) => {
-                  const role = e.role as Placeable
-                  const [x, y, w, h] = e.dest.map((v) => v * k)
-                  const round = e.shape === 'circle'
-                  const on = selected === role
-                  return (
-                    <div
-                      key={`layer-${role}`}
-                      className={`absolute cursor-move group ${on ? 'ring-2 ring-white' : 'ring-1 ring-white/60 hover:ring-white'}`}
-                      style={{ left: x, top: y, width: w, height: h, borderRadius: round ? '50%' : 2 }}
-                      onPointerDown={(ev) => startLayer(ev, role, 'move')}
-                      title={t('Drag to move; drag a handle to resize. Hold Alt to stop it snapping.')}
-                    >
-                      {HANDLES.map(([handle, fx, fy, cursor]) => (
-                        <span
-                          key={handle}
-                          className={`absolute w-2.5 h-2.5 -ml-[5px] -mt-[5px] rounded-full bg-white border border-slate-700 shadow ${
-                            on ? '' : 'opacity-0 group-hover:opacity-100'
+                          className={`absolute left-2.5 text-[11px] font-semibold px-1.5 leading-4 ${
+                            role === 'game' ? 'bottom-0 rounded-t' : 'top-0 rounded-b'
                           }`}
-                          style={{ left: `${(round ? ON_CIRCLE(fx) : fx) * 100}%`, top: `${(round ? ON_CIRCLE(fy) : fy) * 100}%`, cursor }}
-                          onPointerDown={(ev) => startLayer(ev, role, handle)}
-                        />
-                      ))}
-                    </div>
-                  )
-                })}
-              {(guides.xs.length > 0 || guides.ys.length > 0) && (
-                <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox={`0 0 ${OUT_W} ${OUT_H}`} preserveAspectRatio="none">
-                  {guides.xs.map((gx) => (
-                    <line key={`sx${gx}`} x1={gx} x2={gx} y1={0} y2={OUT_H} stroke="#F472B6" strokeWidth={4} />
-                  ))}
-                  {guides.ys.map((gy) => (
-                    <line key={`sy${gy}`} x1={0} x2={OUT_W} y1={gy} y2={gy} stroke="#F472B6" strokeWidth={4} />
-                  ))}
-                </svg>
+                          style={{ background: COLOUR[role], color: ON_COLOUR }}
+                        >
+                          {t(LABEL[role])}
+                        </span>
+                        {HANDLES.map(([handle, fx, fy, cursor]) => (
+                          <span
+                            key={handle}
+                            className="absolute w-3 h-3 -ml-1.5 -mt-1.5 rounded-full border-2 shadow"
+                            style={{ left: `${fx * 100}%`, top: `${fy * 100}%`, background: COLOUR[role], borderColor: ON_COLOUR, cursor }}
+                            onPointerDown={(e) => startDrag(e, role, handle)}
+                          />
+                        ))}
+                      </div>
+                    )
+                  })}
+                {loaded && placing === 'game' && (
+                  <div className="absolute inset-0 pointer-events-none">
+                    {camWalls.flatMap(([x, y, w, h], i) => [
+                      ...[x, x + w].map((v) => (
+                        <div key={`wx${i}${v}`} className="absolute top-0 bottom-0 border-l-2 border-dashed" style={{ left: `${v * 100}%`, borderColor: COLOUR.cam }} />
+                      )),
+                      ...[y, y + h].map((v) => (
+                        <div key={`wy${i}${v}`} className="absolute left-0 right-0 border-t-2 border-dashed" style={{ top: `${v * 100}%`, borderColor: COLOUR.cam }} />
+                      ))
+                    ])}
+                  </div>
+                )}
+                {loaded && (showGrid || placing) && (
+                  <div className="absolute inset-0 pointer-events-none">
+                    {[1 / 3, 2 / 3].map((f) => (
+                      <div key={`gx${f}`} className="absolute top-0 bottom-0 border-l border-dashed border-white/40" style={{ left: `${f * 100}%` }} />
+                    ))}
+                    {[1 / 3, 2 / 3].map((f) => (
+                      <div key={`gy${f}`} className="absolute left-0 right-0 border-t border-dashed border-white/40" style={{ top: `${f * 100}%` }} />
+                    ))}
+                    <div className="absolute top-0 bottom-0 border-l border-white/60" style={{ left: '50%' }} />
+                    <div className="absolute left-0 right-0 border-t border-white/60" style={{ top: '50%' }} />
+                  </div>
+                )}
+                {frameGuides.xs.map((x) => (
+                  <div key={`fx${x}`} className="absolute top-0 bottom-0 border-l-2 pointer-events-none" style={{ left: `${x * 100}%`, borderColor: GUIDE }} />
+                ))}
+                {frameGuides.ys.map((y) => (
+                  <div key={`fy${y}`} className="absolute left-0 right-0 border-t-2 pointer-events-none" style={{ top: `${y * 100}%`, borderColor: GUIDE }} />
+                ))}
+              </div>
+
+              {/* ---- scrubbing through the video ---- */}
+              <div className="gle-moment">
+                <span className="shrink-0">{t('Moment')}</span>
+                <input
+                  type="range"
+                  min={0.02}
+                  max={0.98}
+                  step={0.01}
+                  value={scrub}
+                  className="flex-1"
+                  aria-label={t('Moment in the video')}
+                  onChange={(e) => setScrub(Number(e.target.value))}
+                  onPointerUp={() => setAt(scrub)}
+                  onKeyUp={() => setAt(scrub)}
+                />
+              </div>
+              <div className="gle-thumbs" role="group" aria-label={t('Frames')}>
+                {FRAMES.map((f, i) => (
+                  <FrameThumb
+                    key={f}
+                    src={withRetry(api.layoutFrameUrl(source, f))}
+                    on={Math.abs(at - f) < 0.001}
+                    label={`${t('Frame')} ${i + 1}`}
+                    onPick={() => {
+                      setAt(f)
+                      setScrub(f)
+                    }}
+                  />
+                ))}
+              </div>
+              {note && (
+                <p className="gle-note">
+                  <Icon name="bulb" size={14} />
+                  <span>{note}</span>
+                </p>
               )}
-              {dividerY !== null && (
-                <div
-                  className="absolute left-0 right-0 h-3 -mt-1.5 cursor-ns-resize flex items-center justify-center"
-                  style={{ top: dividerY * k }}
-                  onPointerDown={(e) => {
-                    dividerDrag.current = true
-                    previewRef.current?.setPointerCapture(e.pointerId)
-                  }}
-                  title={t('Drag to change how much of the Short the webcam takes')}
+              {gameOverCam && (
+                <p className="gle-note is-warn">
+                  <Icon name="alert" size={14} />
+                  <span>
+                    {t('The game box runs into the webcam, so part of the webcam shows in the game too. Drag the game box off it: it stops at the webcam’s dashed line (hold Alt to place it freely).')}
+                  </span>
+                </p>
+              )}
+            </section>
+
+            {/* ---- the result ---- */}
+            <section className="gle-side" style={{ width: PW + 2 }}>
+              <div className="flex items-center justify-between gap-2">
+                <p className="label">{t('Preview')}</p>
+                <select
+                  className="input gle-select"
+                  value={safe}
+                  onChange={(e) => setSafe(e.target.value)}
+                  aria-label={t('Platform whose UI to show')}
                 >
-                  <div className="h-1 w-12 rounded-full bg-white/90 shadow" />
+                  {Object.entries(SAFE_ZONES).map(([id, z]) => (
+                    <option key={id} value={id}>
+                      {id === 'none' ? t('No overlay') : `${z.label} ${t('preview')}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div
+                ref={previewRef}
+                className="gle-preview relative overflow-hidden touch-none"
+                style={{ width: PW, height: OUT_H * k }}
+                onPointerMove={onPreviewMove}
+                onPointerUp={endDrags}
+                onPointerCancel={endDrags}
+                onPointerDown={() => setSelected(null)}
+              >
+                <Composition p={p} frameUrl={loaded ? frameUrl : null} src={src} width={PW} placeholderCam={camUnknown} />
+                {/* What the app draws over the Short: the real layout for one
+                    platform; the three platforms' shared no-go areas for "All". */}
+                {PLATFORM_UI[safe] && <PlatformOverlay platform={safe} />}
+                {showGrid && (
+                  <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox={`0 0 ${OUT_W} ${OUT_H}`} preserveAspectRatio="none">
+                    {[OUT_W / 3, (2 * OUT_W) / 3].map((x) => (
+                      <line key={`gx${x}`} x1={x} x2={x} y1={0} y2={OUT_H} stroke="white" strokeOpacity={0.35} strokeWidth={3} strokeDasharray="14 10" />
+                    ))}
+                    {[OUT_H / 3, (2 * OUT_H) / 3].map((y) => (
+                      <line key={`gy${y}`} x1={0} x2={OUT_W} y1={y} y2={y} stroke="white" strokeOpacity={0.35} strokeWidth={3} strokeDasharray="14 10" />
+                    ))}
+                    <line x1={OUT_W / 2} x2={OUT_W / 2} y1={0} y2={OUT_H} stroke="white" strokeOpacity={0.6} strokeWidth={3} />
+                    <line x1={0} x2={OUT_W} y1={OUT_H / 2} y2={OUT_H / 2} stroke="white" strokeOpacity={0.6} strokeWidth={3} />
+                    {safe !== 'none' && (
+                      <rect
+                        x={zone.left}
+                        y={zone.top}
+                        width={OUT_W - zone.left - zone.right}
+                        height={OUT_H - zone.top - zone.bottom}
+                        fill="none"
+                        stroke="#D8B263"
+                        strokeOpacity={0.8}
+                        strokeWidth={3}
+                        strokeDasharray="20 12"
+                      />
+                    )}
+                  </svg>
+                )}
+                {safe === 'all' && (
+                  <>
+                    <div
+                      className="absolute left-0 right-0 top-0 bg-white/15 border-b border-white/40 pointer-events-none flex items-start justify-center"
+                      style={{ height: zone.top * k }}
+                    >
+                      <span className="text-[10px] text-white/85 mt-0.5">{t('Top bar')}</span>
+                    </div>
+                    <div
+                      className="absolute left-0 right-0 bottom-0 bg-white/15 border-t border-white/40 pointer-events-none flex items-end justify-center"
+                      style={{ height: zone.bottom * k }}
+                    >
+                      <span className="text-[10px] text-white/85 mb-0.5">{t('Captions and buttons')}</span>
+                    </div>
+                    <div
+                      className="absolute right-0 bg-white/10 border-l border-white/30 pointer-events-none"
+                      style={{ width: zone.right * k, top: zone.top * k, bottom: zone.bottom * k }}
+                    />
+                  </>
+                )}
+                {loaded &&
+                  layers.map((e) => {
+                    const role = e.role as Placeable
+                    const [x, y, w, h] = e.dest.map((v) => v * k)
+                    const round = e.shape === 'circle'
+                    const on = selected === role
+                    return (
+                      <div
+                        key={`layer-${role}`}
+                        className={`absolute cursor-move group ${on ? 'ring-2 ring-white' : 'ring-1 ring-white/60 hover:ring-white'}`}
+                        style={{ left: x, top: y, width: w, height: h, borderRadius: round ? '50%' : 2 }}
+                        onPointerDown={(ev) => startLayer(ev, role, 'move')}
+                        title={t('Drag to move; drag a handle to resize. Hold Alt to stop it snapping.')}
+                      >
+                        {HANDLES.map(([handle, fx, fy, cursor]) => (
+                          <span
+                            key={handle}
+                            className={`absolute w-2.5 h-2.5 -ml-[5px] -mt-[5px] rounded-full bg-white border border-base shadow ${
+                              on ? '' : 'opacity-0 group-hover:opacity-100'
+                            }`}
+                            style={{ left: `${(round ? ON_CIRCLE(fx) : fx) * 100}%`, top: `${(round ? ON_CIRCLE(fy) : fy) * 100}%`, cursor }}
+                            onPointerDown={(ev) => startLayer(ev, role, handle)}
+                          />
+                        ))}
+                      </div>
+                    )
+                  })}
+                {(guides.xs.length > 0 || guides.ys.length > 0) && (
+                  <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox={`0 0 ${OUT_W} ${OUT_H}`} preserveAspectRatio="none">
+                    {guides.xs.map((gx) => (
+                      <line key={`sx${gx}`} x1={gx} x2={gx} y1={0} y2={OUT_H} stroke={GUIDE} strokeWidth={4} />
+                    ))}
+                    {guides.ys.map((gy) => (
+                      <line key={`sy${gy}`} x1={0} x2={OUT_W} y1={gy} y2={gy} stroke={GUIDE} strokeWidth={4} />
+                    ))}
+                  </svg>
+                )}
+                {dividerY !== null && (
+                  <div
+                    className="absolute left-0 right-0 h-3 -mt-1.5 cursor-ns-resize flex items-center justify-center"
+                    style={{ top: dividerY * k }}
+                    onPointerDown={(e) => {
+                      dividerDrag.current = true
+                      previewRef.current?.setPointerCapture(e.pointerId)
+                    }}
+                    title={t('Drag to change how much of the Short the webcam takes')}
+                  >
+                    <div className="h-1 w-12 rounded-full bg-white/90 shadow" />
+                  </div>
+                )}
+              </div>
+              {face && (
+                <p className="gle-face" data-tone={face.tone}>
+                  {face.tone !== 'muted' && <Icon name={face.tone === 'ok' ? 'check' : 'alert'} size={14} />}
+                  <span>{face.text}</span>
+                </p>
+              )}
+              {layers.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <p className="text-xs text-muted flex-1">
+                    {t('Drag')} {layers.some((e) => e.role === 'ui') ? t('the Game UI') : t('the facecam')}{' '}
+                    {t('on the preview to move it, its corner to resize it.')}
+                  </p>
+                  {layers.some((e) => places[e.role as Placeable]) && (
+                    <button type="button" className="btn-ghost ui-btn ui-btn-sm shrink-0" onClick={() => setPlaces({})}>
+                      <span className="ui-btn-label">{t('Reset')}</span>
+                    </button>
+                  )}
                 </div>
               )}
-            </div>
-            {faceText && (
-              <p className={faceText.startsWith('⚠') ? 'text-warn' : faceText.startsWith('✓') ? 'text-gold' : 'text-muted'}>
-                {faceText}
-              </p>
-            )}
-            {layers.length > 0 && (
-              <div className="flex items-center gap-2">
-                <p className="text-muted flex-1">
-                  {t('Drag')} {layers.some((e) => e.role === 'ui') ? t('the Game UI') : t('the facecam')}{' '}
-                  {t('on the preview to move it, its corner to resize it.')}
+              {shownPreset !== preset && (
+                <p className="gle-face" data-tone="warn">
+                  <Icon name="alert" size={14} />
+                  <span>
+                    {t('Showing')} {t(PRESETS[shownPreset].label)}: {t('this layout needs a box that isn’t set yet.')}
+                  </span>
                 </p>
-                {layers.some((e) => places[e.role as Placeable]) && (
-                  <button className="btn-ghost !py-0.5 !px-2 text-xs shrink-0" onClick={() => setPlaces({})}>
-                    {t('Reset')}
-                  </button>
-                )}
-              </div>
-            )}
-            {shownPreset !== preset && (
-              <p className="text-warn">
-                {t('Showing')} {t(PRESETS[shownPreset].label)}: {t('this layout needs a box that isn’t set yet.')}
-              </p>
-            )}
+              )}
 
-            {spec.type === 'stack' && (
-              <div className="flex items-center gap-2">
-                <span className="text-muted w-14">{t('On top')}</span>
-                {segment(
-                  [
-                    ['cam_top', 'Camera'],
-                    ['game_top', 'Game']
-                  ],
-                  order,
-                  setOrder
+              <div className="gle-controls">
+                {spec.type === 'stack' && (
+                  <div className="gle-row">
+                    <span className="gle-row-label">{t('On top')}</span>
+                    {segment(
+                      [
+                        ['cam_top', 'Camera'],
+                        ['game_top', 'Game']
+                      ],
+                      order,
+                      setOrder
+                    )}
+                  </div>
                 )}
-              </div>
-            )}
-            {(roles.has('cam') || roles.has('cam2')) && (
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-muted w-14" style={{ color: COLOUR.cam }}>
-                    {t('Webcam')}
+                {(roles.has('cam') || roles.has('cam2')) && (
+                  <>
+                    <div className="gle-row">
+                      <span className="gle-row-label">
+                        <span className="gle-swatch" style={{ background: COLOUR.cam }} aria-hidden />
+                        {t('Webcam')}
+                      </span>
+                      {segment(
+                        [
+                          ['draw', 'Draw it'],
+                          ['auto', 'Find it'],
+                          ['none', 'None']
+                        ],
+                        camMode,
+                        (m) => {
+                          setCamMode(m)
+                          camTouched.current = true
+                          if (m === 'draw') {
+                            if (!boxes.cam) setBox('cam', found ?? NEW_BOX.cam)
+                            setActive('cam')
+                          }
+                        }
+                      )}
+                    </div>
+                    {camMode === 'draw' && (
+                      <button type="button" className="btn-ghost ui-btn ui-btn-sm w-full" onClick={snap} disabled={snapping}>
+                        {snapping ? <span className="ui-spinner" aria-hidden /> : <Icon name="wand" size={14} />}
+                        <span className="ui-btn-label">{snapping ? t('Snapping…') : t('Snap to the webcam’s border')}</span>
+                      </button>
+                    )}
+                  </>
+                )}
+                <div className={`gle-row ${spec.type === 'full' ? 'hidden' : ''}`}>
+                  <span className="gle-row-label">
+                    <span className="gle-swatch" style={{ background: COLOUR.game }} aria-hidden />
+                    {t('Game')}
                   </span>
                   {segment(
                     [
-                      ['draw', 'Draw it'],
-                      ['auto', 'Find it'],
-                      ['none', 'None']
+                      ['fit', 'Whole'],
+                      ['fill', 'Zoom to fill']
                     ],
-                    camMode,
-                    (m) => {
-                      setCamMode(m)
-                      camTouched.current = true
-                      if (m === 'draw') {
-                        if (!boxes.cam) setBox('cam', found ?? NEW_BOX.cam)
-                        setActive('cam')
-                      }
-                    }
+                    gameFit,
+                    setGameFit
                   )}
                 </div>
-                {camMode === 'draw' && (
-                  <button className="btn-ghost !py-1 w-full" onClick={snap} disabled={snapping}>
-                    {snapping ? t('Snapping…') : t('Snap to the webcam’s border')}
+                {(spec.type === 'full' ? spec.game_fit === 'fill' : gameFit === 'fill') && !boxes.game && (
+                  <div className="gle-row">
+                    <span className="gle-row-label">{t('Crop')}</span>
+                    {segment(
+                      [
+                        ['left', 'Left'],
+                        ['center', 'Centre'],
+                        ['right', 'Right']
+                      ],
+                      gameAlign,
+                      setGameAlign
+                    )}
+                  </div>
+                )}
+                {boxes.game && (
+                  <button type="button" className="btn-ghost ui-btn ui-btn-sm w-full" onClick={() => setBoxes((b) => ({ ...b, game: null }))}>
+                    <Icon name="sparkle" size={14} />
+                    <span className="ui-btn-label">{t('Let Solaris Studio pick the game area')}</span>
                   </button>
                 )}
               </div>
-            )}
-            <div className="space-y-1">
-              <div className={`flex items-center gap-2 ${spec.type === 'full' ? 'hidden' : ''}`}>
-                <span className="text-muted w-14" style={{ color: COLOUR.game }}>
-                  {t('Game')}
-                </span>
-                {segment(
-                  [
-                    ['fit', 'Whole'],
-                    ['fill', 'Zoom to fill']
-                  ],
-                  gameFit,
-                  setGameFit
-                )}
-              </div>
-              {(spec.type === 'full' ? spec.game_fit === 'fill' : gameFit === 'fill') && !boxes.game && (
-                <div className="flex items-center gap-2">
-                  <span className="text-muted w-14">{t('Crop')}</span>
-                  {segment(
-                    [
-                      ['left', 'Left'],
-                      ['center', 'Centre'],
-                      ['right', 'Right']
-                    ],
-                    gameAlign,
-                    setGameAlign
-                  )}
-                </div>
-              )}
-              {boxes.game && (
-                <button className="btn-ghost !py-1 w-full" onClick={() => setBoxes((b) => ({ ...b, game: null }))}>
-                  {t('Let Solaris Studio pick the game area')}
-                </button>
-              )}
-            </div>
+            </section>
           </div>
         </div>
 
-        <div className="flex items-center gap-3 justify-end">
+        {/* ---- footer: the decision, always in view ---- */}
+        <footer className="gle-foot">
           {canRemember && (
-            <label className="flex items-center gap-2 text-xs text-muted mr-auto cursor-pointer">
-              <input
-                type="checkbox"
-                className="size-4 accent-accent-strong"
-                checked={remember}
-                onChange={(e) => setRemember(e.target.checked)}
-              />
-              {t('Remember for this creator’s next videos')}
+            <label className="gle-remember">
+              <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+              <span>{t('Remember for this creator’s next videos')}</span>
             </label>
           )}
-          <button className="btn-ghost" onClick={onClose}>
-            {t('Cancel')}
-          </button>
-          <button className="btn-accent" onClick={done}>
-            {context === 'video' ? t('Use this layout') : t('Done')}
-          </button>
-        </div>
+          <div className="gle-foot-actions">
+            <button type="button" className="btn-ghost ui-btn ui-btn-md" onClick={onClose}>
+              <span className="ui-btn-label">{t('Cancel')}</span>
+            </button>
+            <button type="button" className="btn-accent ui-btn ui-btn-md" onClick={done}>
+              <Icon name="check" size={16} />
+              <span className="ui-btn-label">{context === 'video' ? t('Use this layout') : t('Done')}</span>
+            </button>
+          </div>
+        </footer>
       </div>
-    </div>
+    </Overlay>
   )
 }

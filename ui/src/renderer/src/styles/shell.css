@@ -53,7 +53,7 @@ html[data-edit-bay] .shell { --rail-col: var(--rail-w-collapsed) }
   position: fixed;
   left: 12px;
   top: -48px;
-  z-index: 100;
+  z-index: var(--z-skip);
   padding: 8px 14px;
   border-radius: var(--radius-md);
   background: var(--color-gold);
@@ -78,7 +78,7 @@ html[data-density='compact'] { --topbar-h: 46px }
   grid-column: 1;
   grid-row: 1;
   position: relative;
-  z-index: 30;
+  z-index: var(--z-rail);
   width: 100%;
   height: 100vh;
   display: flex;
@@ -96,7 +96,7 @@ html[data-density='compact'] { --topbar-h: 46px }
   top: 0;
   bottom: 0;
   width: var(--rail-w);
-  z-index: 60;
+  z-index: var(--z-rail-float);
   background:
     radial-gradient(140% 40% at 0% 0%, rgb(143 36 69 / 0.22), transparent 60%),
     var(--glass-strong);
@@ -111,7 +111,7 @@ html[data-density='compact'] { --topbar-h: 46px }
 .rail-scrim {
   position: fixed;
   inset: 0;
-  z-index: 55;
+  z-index: var(--z-scrim);
   background: rgb(12 6 8 / 0.45);
 }
 
@@ -316,7 +316,8 @@ html[data-density='compact'] .rail-item { min-height: 38px }
 .rail-caption {
   font-size: 0.6875rem;
   line-height: 1.25;
-  color: rgb(187 165 168 / 0.62);
+  /* 0.8 alpha: about 5:1 on the rail, AA at 11px (was 3.8:1) */
+  color: rgb(187 165 168 / 0.8);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -419,6 +420,29 @@ html[data-density='compact'] .rail-caption { display: none }
 .model-chip-warn { color: var(--color-warn) }
 .model-chip-cloud { color: var(--color-ink); background: var(--tint-accent) }
 .model-switcher { padding: 2px 4px 6px }
+.model-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-hairline);
+  background: rgb(12 6 8 / 0.6);
+  color: var(--color-ink);
+  font-size: 0.8125rem;
+  text-align: left;
+  transition: border-color var(--dur-2), background-color var(--dur-2);
+}
+.model-row:hover { border-color: rgb(216 178 99 / 0.45); background: rgb(46 26 33 / 0.6) }
+/* Short windows: the model row alone, no label or caption. */
+@media (max-height: 900px) {
+  .rail .model-switcher:not(.model-switcher-pop) .model-switcher-label,
+  .rail .model-switcher-hint { display: none }
+  .rail .model-switcher .model-row,
+  .rail .model-switcher > .input { margin-top: 0 }
+}
 .model-switcher-pop { padding: 4px }
 .rail-health {
   display: flex;
@@ -455,15 +479,99 @@ html[data-density='compact'] .rail-caption { display: none }
 }
 .btn-icon.rail-collapse { width: 28px; height: 28px; flex-shrink: 0 }
 
+/* Short windows: the footer (feedback, AI model, health) used to take ~190px
+   and push Storage, Settings and AI models out of sight behind the fade.
+   Tighten the list first, then the footer. */
+@media (max-height: 900px) {
+  .rail-top { min-height: 56px; padding-block: 10px 6px }
+  .rail-orb-wrap { padding-bottom: 8px }
+  .rail-item { min-height: 38px; padding-block: 4px }
+  .rail-caption { display: none }
+  .rail-group-label { padding-top: 6px; padding-bottom: 2px }
+  .rail-group-rule { margin-block: 6px }
+  .rail-group { margin-bottom: 2px }
+  .rail-foot { padding-block: 6px 8px; gap: 2px }
+  .rail-feedback { min-height: 32px }
+}
+@media (max-height: 720px) {
+  .rail-top { min-height: 48px; padding-block: 6px 4px }
+  .rail-orb { height: 42px }
+  .rail-orb:not([data-expanded='true']) { width: 42px }
+  .rail-item { min-height: 34px }
+  .rail[data-expanded='true'] .rail-group-label { display: none }
+  .rail[data-expanded='true'] .rail-group:not(:first-child)::before {
+    content: '';
+    display: block;
+    height: 1px;
+    margin: 4px 10px;
+    background: var(--color-hairline);
+  }
+}
+/* Short windows (1024x640, 800x600): every page fits without scrolling.
+   Tighter rows, rules and footer; the 30px rows below 620px still clear the
+   24px minimum target and keep the 20px icons centred. */
+@media (max-height: 720px) {
+  .rail-top { min-height: 44px; padding-block: 4px 4px }
+  .rail-orb-wrap { padding-top: 0; padding-bottom: 6px }
+  .rail-scroll { padding-bottom: 4px }
+  .rail-item { min-height: 32px; padding-block: 2px }
+  .rail-group { margin-bottom: 0 }
+  .rail-group-rule { margin-block: 4px }
+  .rail-group:first-child .rail-group-rule { margin-top: 2px }
+  .rail-foot { padding-block: 4px 6px }
+  .rail-feedback { min-height: 30px }
+  .rail .model-chip-wrap { padding-block: 0 }
+  .rail[data-expanded='false'] .rail-foot-row { gap: 2px }
+  .rail[data-expanded='false'] .rail-health { height: 26px }
+}
+@media (max-height: 620px) {
+  .rail-item { min-height: 30px; padding-block: 1px }
+  .rail-group-rule { margin-block: 3px }
+  .rail .model-chip { width: 32px; height: 32px }
+}
+/* Still more than fits (very short windows, big text): a chevron at the cut
+   edge says so and scrolls there (Rail.tsx), beyond the fade alone. */
+.rail-scroll-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.rail-more {
+  position: absolute;
+  left: 50%;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 18px;
+  translate: -50% 0;
+  border-radius: 999px;
+  color: var(--color-gold-strong);
+  background: var(--color-sunken);
+  box-shadow: inset 0 0 0 1px rgb(216 178 99 / 0.35), 0 4px 12px -4px rgb(0 0 0 / 0.8);
+  transition: background-color var(--dur-2), box-shadow var(--dur-2);
+  animation: fade-in var(--dur-2) var(--ease-out) both;
+}
+.rail-more-below { bottom: 2px }
+.rail-more-above { top: 0 }
+.rail-more:hover { background: var(--color-raised); box-shadow: inset 0 0 0 1px rgb(216 178 99 / 0.6), var(--glow-gold) }
+/* A visible hint that the list scrolls, on top of the fade. */
+.rail-scroll[data-more='below'],
+.rail-scroll[data-more='both'] { scrollbar-color: rgb(74 42 52 / 0.7) transparent }
+
 /* =========================================================================
    Top bar
    ========================================================================= */
 .topbar {
   position: relative;
-  z-index: 20;
+  z-index: var(--z-topbar);
   height: var(--topbar-h);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 480px) minmax(0, 1fr);
+  /* The left column (back/forward + breadcrumbs) gets the room; the right
+     column only needs its icon buttons and the jobs pill. */
+  grid-template-columns: minmax(0, 1.5fr) minmax(220px, 440px) minmax(max-content, 1fr);
   align-items: center;
   gap: 12px;
   padding: 0 14px 0 10px;
@@ -481,18 +589,50 @@ html[data-density='compact'] .rail-caption { display: none }
   border-bottom-color: var(--color-hairline);
   box-shadow: 0 10px 28px -18px rgb(0 0 0 / 0.9);
 }
-html[data-edit-bay] .topbar {
-  height: 8px;
-  overflow: hidden;
-  opacity: 0.6;
+/* Edit Bay: the top bar tucks away above the window edge, leaving an 8px
+   strip with a small grab handle. Revealing it slides it OVER the bay (the
+   grid row stays 8px), so the video and timeline never jump. */
+html[data-edit-bay] .shell-main { grid-template-rows: 8px auto minmax(0, 1fr) auto }
+html[data-edit-bay] .shell-main > .topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: var(--glass-strong);
+  border-bottom-color: var(--color-hairline);
+  transform: translateY(calc(8px - 100%));
+  transition:
+    transform var(--dur-3) var(--ease-out-expo),
+    box-shadow var(--dur-3) var(--ease-out);
 }
-html[data-edit-bay] .topbar:hover,
-html[data-edit-bay] .topbar:focus-within {
-  height: var(--topbar-h);
-  overflow: visible;
-  opacity: 1;
+html[data-edit-bay] .shell-main > .topbar > * {
+  opacity: 0;
+  transition: opacity var(--dur-2) var(--ease-out);
 }
+html[data-edit-bay] .shell-main > .topbar::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  width: 44px;
+  height: 3px;
+  margin-left: -22px;
+  border-radius: 999px;
+  background: rgb(216 178 99 / 0.4);
+  transition: opacity var(--dur-2);
+  pointer-events: none;
+}
+html[data-edit-bay] .shell-main > .topbar:hover,
+html[data-edit-bay] .shell-main > .topbar:focus-within {
+  transform: none;
+  box-shadow: 0 14px 32px -16px rgb(0 0 0 / 0.9);
+}
+html[data-edit-bay] .shell-main > .topbar:hover > *,
+html[data-edit-bay] .shell-main > .topbar:focus-within > * { opacity: 1 }
+html[data-edit-bay] .shell-main > .topbar:hover::after,
+html[data-edit-bay] .shell-main > .topbar:focus-within::after { opacity: 0 }
 .topbar-left { display: flex; align-items: center; gap: 2px; min-width: 0 }
+.topbar-left > .btn-icon { flex-shrink: 0 }
 .topbar-right { display: flex; align-items: center; justify-content: flex-end; gap: 4px; min-width: 0 }
 .topbar-search {
   justify-self: center;
@@ -522,14 +662,19 @@ html[data-edit-bay] .topbar:focus-within {
 @media (max-width: 1099px) {
   .topbar { grid-template-columns: minmax(0, 1fr) auto auto }
   .topbar-search { width: 34px; padding: 0; justify-content: center }
-  .topbar-search-text,
-  .topbar-search-kbd { display: none }
+  /* two classes: beats .ui-kbd-group { display: inline-flex } further down */
+  .topbar-search .topbar-search-text,
+  .topbar-search .topbar-search-kbd { display: none }
 }
 
 /* breadcrumbs */
-.crumbs { min-width: 0; margin-left: 6px }
+.crumbs { min-width: 0; margin-left: 6px; flex: 1 }
 .crumbs ol { display: flex; align-items: center; gap: 4px; min-width: 0; font-size: 0.8125rem }
 .crumb { display: flex; align-items: center; gap: 5px; min-width: 0 }
+/* The page crumb never truncates; middle crumbs give way first, then the last. */
+.crumb-page:not([data-last]) { flex-shrink: 0 }
+.crumb-page:not([data-last]) .crumb-link { max-width: none }
+.crumb:not(.crumb-page):not([data-last]) { flex-shrink: 3 }
 .crumb-icon { color: var(--color-gold); flex-shrink: 0 }
 .crumb-sep { color: rgb(187 165 168 / 0.45); flex-shrink: 0 }
 .crumb-current {
@@ -553,12 +698,18 @@ html[data-edit-bay] .topbar:focus-within {
   text-overflow: ellipsis;
   max-width: 200px;
   border-radius: 4px;
+  /* A 24px hit area (WCAG 2.5.8) without changing the row's look. */
+  display: inline-block;
+  line-height: 24px;
+  vertical-align: middle;
   transition: color var(--dur-2);
 }
 .crumb-link:hover { color: var(--color-gold-strong) }
+/* Narrow: keep the page icon (its label hides) and the last crumb, so the
+   bar still says where you are. */
 @media (max-width: 1099px) {
-  .crumb:not([data-last]) { display: none }
-  .crumb[data-last] .crumb-sep { display: none }
+  .crumb:not([data-last]):not(.crumb-page) { display: none }
+  .crumb-page:not([data-last]) .crumb-link { display: none }
 }
 
 /* jobs pill */
@@ -598,14 +749,22 @@ html[data-edit-bay] .topbar:focus-within {
    ========================================================================= */
 .dock {
   position: relative;
-  z-index: 15;
+  z-index: var(--z-dock);
   height: 4px;
   background: var(--color-abyss);
   border-top: 1px solid rgb(216 178 99 / 0.06);
   transition: height var(--dur-3) var(--ease-out-expo), background-color var(--dur-3);
   overflow: hidden;
 }
-.dock[data-open='true'] { height: 40px; background: var(--glass-strong) }
+/* Opening overlays the page (a negative margin keeps the grid row at 4px),
+   so the content above never reflows under the pointer. */
+.dock[data-open='true'],
+.dock:focus-within {
+  height: 40px;
+  margin-top: -36px;
+  background: var(--glass-strong);
+  box-shadow: 0 -12px 28px -14px rgb(0 0 0 / 0.85);
+}
 .dock-track { position: absolute; left: 0; right: 0; top: 0; height: 4px }
 .dock-fill {
   position: relative;
@@ -648,7 +807,8 @@ html[data-edit-bay] .topbar:focus-within {
     transform var(--dur-3) var(--ease-out-expo);
   overflow: hidden;
 }
-.dock[data-open='true'] .dock-strip { opacity: 1; transform: none }
+.dock[data-open='true'] .dock-strip,
+.dock:focus-within .dock-strip { opacity: 1; transform: none }
 .dock-count { font-size: 0.7rem; color: var(--color-muted); flex-shrink: 0 }
 .dock-chip {
   display: inline-flex;
@@ -810,7 +970,7 @@ html[data-edit-bay] .topbar:focus-within {
 .ui-page-header {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 16px 24px;
   animation: rise var(--dur-4) var(--ease-out-expo) both;
@@ -828,7 +988,11 @@ html[data-edit-bay] .topbar:focus-within {
 }
 .ui-page-eyebrow { margin-bottom: 4px }
 .ui-rule-in { animation: rule-in var(--dur-4) var(--ease-out-expo) both; animation-delay: 140ms }
-.ui-page-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px }
+/* Actions sit on the title's line on every page, whatever the subtitle's
+   length: the eyebrow (14px line + 4px margin) pushes the h1 down by 18px,
+   and a 34px h1 centres a 34-36px button with the same offset. */
+.ui-page-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 34px }
+.ui-page-header:has(.ui-page-eyebrow) > .ui-page-actions { margin-top: 18px }
 .ui-section-header {
   display: flex;
   align-items: flex-end;
@@ -889,6 +1053,16 @@ dialog.ui-dialog-full .ui-dialog-body { height: calc(100vh - 48px) }
   padding: 18px 20px 8px;
 }
 .ui-dialog-content { padding: 8px 20px 20px; overflow-y: auto; min-height: 0 }
+/* A confirm with no body: no empty band above the footer. */
+.ui-dialog-content:has(> .sr-only:only-child) { padding: 0 0 8px }
+/* The destructive action in a dialog footer carries real weight. */
+.ui-dialog-foot .btn-danger.ui-btn {
+  background-color: var(--color-error);
+  border-color: transparent;
+  color: #2a0a0f;
+  font-weight: 600;
+}
+.ui-dialog-foot .btn-danger.ui-btn:hover:not(:disabled) { background-color: #f5949c; border-color: transparent }
 .ui-dialog-foot {
   display: flex;
   justify-content: flex-end;
@@ -922,7 +1096,7 @@ dialog.ui-sheet[data-side='bottom'] {
   max-height: 86vh;
 }
 dialog.ui-sheet.ui-sheet-docked {
-  z-index: 45;
+  z-index: var(--z-sheet);
   /* Docked (non-modal) sheets sit under the TopBar so their header and close
      button are never covered by the title bar / window controls. */
   top: var(--topbar-h);
@@ -970,16 +1144,82 @@ dialog.ui-sheet[data-side='bottom'] .ui-sheet-body {
   position: fixed;
   right: 18px;
   bottom: 22px;
-  z-index: 80;
+  z-index: var(--z-toast);
   width: min(380px, calc(100vw - 36px));
+  max-height: calc(100vh - var(--topbar-h) - 48px);
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
   gap: 10px;
   pointer-events: none;
+  transition: right var(--dur-3) var(--ease-out-expo);
+}
+/* The toaster is a manual popover (Toast.tsx), so it sits in the top layer
+   above modal dialogs and sheets; reset the popover UA box. */
+.ui-toaster[popover] {
+  inset: auto 18px 22px auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  overflow: visible;
+}
+/* Never on top of the Assistant drawer's composer or a right-hand sheet. */
+html:has(.lyr-assistant[data-open='true']) .ui-toaster,
+html:has(dialog.ui-sheet[open]:not([data-side='bottom'])) .ui-toaster {
+  right: calc(min(440px, 100vw) + 18px);
+}
+@media (max-width: 900px) {
+  html:has(.lyr-assistant[data-open='true']) .ui-toaster,
+  html:has(dialog.ui-sheet[open]:not([data-side='bottom'])) .ui-toaster {
+    right: max(18px, calc(50% - 190px));
+  }
+}
+/* A deck: the newest three in full, older ones tucked behind as slivers
+   until the stack is hovered or focused. */
+.ui-toaster:not(:hover):not(:focus-within) > .ui-toast:nth-last-child(n + 4) {
+  max-height: 10px;
+  padding-block: 0;
+  margin-bottom: -6px;
+  opacity: 0.55;
+  transform: scale(0.94);
+}
+.ui-toaster:not(:hover):not(:focus-within) > .ui-toast:nth-last-child(n + 4) > * { visibility: hidden }
+/* Toasts beside the command palette: never on top of it. While it is open
+   only the newest toast shows in full (hover the deck for the rest), and
+   where the two would share columns the palette stops short of the stack,
+   whose height Toast.tsx publishes as --toast-stack-h. Toaster: 22px from
+   the bottom; palette: 11vh from the top; 16px of air between them. */
+html:has(dialog.lyr-palette[open]) .ui-toaster:not(:hover):not(:focus-within) > .ui-toast:nth-last-child(n + 2) {
+  max-height: 10px;
+  padding-block: 0;
+  margin-bottom: -6px;
+  opacity: 0.55;
+  transform: scale(0.94);
+}
+html:has(dialog.lyr-palette[open]) .ui-toaster:not(:hover):not(:focus-within) > .ui-toast:nth-last-child(n + 2) > * {
+  visibility: hidden;
+}
+@media (max-width: 1759px) {
+  html:has(.ui-toaster > .ui-toast) {
+    --pal-room: max(180px, calc(89vh - var(--toast-stack-h, 0px) - 38px));
+  }
+  html:has(.ui-toaster > .ui-toast) dialog.lyr-palette .ui-dialog-body {
+    max-height: min(640px, 78vh, var(--pal-room));
+  }
+  html:has(.ui-toaster > .ui-toast) dialog.lyr-palette .lyr-pal {
+    min-height: min(240px, calc(var(--pal-room) - 2px));
+    max-height: min(560px, calc(78vh - 2px), calc(var(--pal-room) - 2px));
+  }
+  html:has(.ui-toaster > .ui-toast) dialog.lyr-palette .lyr-pal[data-preview='true'] {
+    min-height: min(400px, calc(var(--pal-room) - 2px));
+  }
 }
 .ui-toast {
   position: relative;
+  flex-shrink: 0;
+  max-height: 480px;
   display: flex;
   align-items: flex-start;
   gap: 12px;
@@ -1007,6 +1247,11 @@ dialog.ui-sheet[data-side='bottom'] .ui-sheet-body {
 .ui-toast-info { --tone: var(--color-gold); --tone-tint: var(--tint-gold) }
 .ui-toast-success { --tone: var(--color-success); --tone-tint: var(--tint-success) }
 .ui-toast-warn { --tone: var(--color-warn); --tone-tint: var(--tint-warn) }
+/* warn and info are both warm: warn also gets a dashed stripe */
+.ui-toast-warn::before {
+  width: 4px;
+  background: repeating-linear-gradient(180deg, var(--color-warn) 0 6px, rgb(242 166 90 / 0.45) 6px 9px);
+}
 .ui-toast-error { --tone: var(--color-error); --tone-tint: var(--tint-error) }
 .ui-toast-icon {
   width: 32px;
@@ -1050,6 +1295,9 @@ dialog.ui-sheet[data-side='bottom'] .ui-sheet-body {
    Toggle, tabs, segmented
    ========================================================================= */
 .ui-toggle-row { display: flex; align-items: flex-start; gap: 12px }
+/* The button is the hit target, at least 24px tall whatever the size; the
+   track is drawn by ::before at the size's own height, so md and sm stay
+   slim to look at. */
 .ui-switch {
   --sw-w: 40px;
   --sw-h: 22px;
@@ -1057,7 +1305,19 @@ dialog.ui-sheet[data-side='bottom'] .ui-sheet-body {
   position: relative;
   flex-shrink: 0;
   width: var(--sw-w);
+  height: max(var(--sw-h), 24px);
+  border-radius: 999px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+.ui-switch::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: 50%;
   height: var(--sw-h);
+  transform: translateY(-50%);
   border-radius: 999px;
   background: var(--color-abyss);
   border: 1px solid var(--color-line);
@@ -1069,7 +1329,7 @@ dialog.ui-sheet[data-side='bottom'] .ui-sheet-body {
 .ui-switch-sm { --sw-w: 32px; --sw-h: 18px; --sw-t: 12px }
 .ui-switch-lg { --sw-w: 54px; --sw-h: 30px; --sw-t: 24px }
 .ui-switch:disabled { cursor: not-allowed }
-.ui-switch[data-on='true'] {
+.ui-switch[data-on='true']::before {
   background: var(--grad-ember);
   border-color: rgb(216 178 99 / 0.5);
   box-shadow: 0 0 14px -4px rgb(169 47 85 / 0.9);
@@ -1077,7 +1337,7 @@ dialog.ui-sheet[data-side='bottom'] .ui-sheet-body {
 .ui-switch-thumb {
   position: absolute;
   top: 50%;
-  left: 2px;
+  left: 3px;
   width: var(--sw-t);
   height: var(--sw-t);
   border-radius: 999px;
@@ -1479,4 +1739,45 @@ dialog.ui-sheet[data-side='bottom'] .ui-sheet-body {
   background: var(--tint-error);
   box-shadow: inset 0 0 0 1px rgb(242 122 132 / 0.3);
 }
-.update-banner { position: relative; z-index: 18 }
+.update-banner { position: relative; z-index: var(--z-banner) }
+
+/* =========================================================================
+   Overlay + FloatingLayer (components/ui/Overlay.tsx)
+   In @layer components so a caller's Tailwind utilities (padding,
+   alignment, position) override these defaults; the UA dialog/popover
+   styles sit below every author layer.
+   ========================================================================= */
+@layer components {
+  dialog.ui-overlay {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--color-ink);
+    overflow: hidden;
+    overscroll-behavior: contain;
+    align-items: center;
+    justify-content: center;
+  }
+  dialog.ui-overlay[open] { display: flex }
+  dialog.ui-overlay[open]::backdrop {
+    background: rgb(12 6 8 / 0.78);
+    backdrop-filter: blur(6px);
+  }
+  [popover].ui-float {
+    position: fixed;
+    inset: auto;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--color-ink);
+    overflow: visible;
+  }
+}

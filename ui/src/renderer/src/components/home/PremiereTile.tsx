@@ -46,13 +46,16 @@ export default function PremiereTile({ className }: { className?: string }): JSX
   }
   if (best === null) {
     return (
-      <Card variant="sunken" className={`home-premiere home-premiere-empty ${className ?? ''}`}>
+      <Card className={`home-premiere home-premiere-empty ${className ?? ''}`}>
         <span className="home-premiere-reel" aria-hidden>
-          <Icon name="clapper" size={30} />
+          <Icon name="clapper" size={28} />
         </span>
         <p className="t-micro">{t('Premiere')}</p>
         <p className="t-md text-ink">{t('Best this week')}</p>
-        <p className="text-sm text-muted">{t('Your top clip from the last 7 days takes the stage here.')}</p>
+        <p className="text-sm text-muted max-w-xs text-balance">{t('Your top clip from the last 7 days takes the stage here.')}</p>
+        <Button variant="subtle" size="sm" iconRight="arrow-right" className="nudge mt-2" onClick={() => navigate({ page: 'studio' })}>
+          {t('Open the Clip Editor')}
+        </Button>
       </Card>
     )
   }

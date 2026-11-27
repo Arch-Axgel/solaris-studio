@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { Icon } from './icons'
+import { hideTop, layerHost, placeFloating, showTop } from './ui/position'
 
 export type Explained = { id: string; label: string; hint: string }
 
@@ -25,17 +27,61 @@ export default function ExplainedSelect({
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(0)
   const root = useRef<HTMLDivElement>(null)
+  const btn = useRef<HTMLButtonElement>(null)
+  const list = useRef<HTMLUListElement>(null)
   const chosen = Math.max(0, options.findIndex((o) => o.id === value))
 
   // A click anywhere else closes it, as a native select does.
   useEffect(() => {
     if (!open) return
     const away = (e: MouseEvent): void => {
-      if (root.current && !root.current.contains(e.target as Node)) setOpen(false)
+      const t = e.target as Node
+      if (root.current?.contains(t) || list.current?.contains(t)) return
+      setOpen(false)
     }
     document.addEventListener('mousedown', away)
     return () => document.removeEventListener('mousedown', away)
   }, [open])
+
+  // The list lives in the top layer (portaled next to the anchor's dialog or
+  // <body>), so scrolling cards and sheets can't clip it. It follows the
+  // button while the page scrolls and closes once the button scrolls away.
+  useLayoutEffect(() => {
+    const el = list.current
+    const b = btn.current
+    if (!open || !el || !b) return
+    const place = (): void => {
+      const r = b.getBoundingClientRect()
+      el.style.width = `${Math.max(224, Math.round(r.width))}px`
+      placeFloating(r, el, 'bottom', 'start', 4)
+    }
+    showTop(el, 'manual')
+    place()
+    let raf = 0
+    const onScroll = (e: Event): void => {
+      if (e.target instanceof Node && el.contains(e.target)) return
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => {
+        const r = b.getBoundingClientRect()
+        if (r.bottom < 0 || r.top > window.innerHeight) setOpen(false)
+        else place()
+      })
+    }
+    window.addEventListener('resize', place)
+    window.addEventListener('scroll', onScroll, true)
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('resize', place)
+      window.removeEventListener('scroll', onScroll, true)
+      hideTop(el)
+    }
+  }, [open])
+
+  // Keep the highlighted option in view while arrowing through a long list.
+  useEffect(() => {
+    if (!open) return
+    list.current?.querySelector<HTMLElement>('[data-active="true"]')?.scrollIntoView({ block: 'nearest' })
+  }, [open, active])
 
   const show = (): void => {
     setActive(chosen)
@@ -53,7 +99,12 @@ export default function ExplainedSelect({
       }
       return
     }
-    if (e.key === 'Escape' || e.key === 'Tab') {
+    if (e.key === 'Escape') {
+      // Close only the list, not the sheet or dialog around it.
+      e.preventDefault()
+      e.stopPropagation()
+      setOpen(false)
+    } else if (e.key === 'Tab') {
       setOpen(false)
     } else if (e.key === 'ArrowDown') {
       e.preventDefault()
@@ -70,6 +121,7 @@ export default function ExplainedSelect({
   return (
     <div ref={root} className={`relative shrink-0 ${className}`}>
       <button
+        ref={btn}
         type="button"
         className="input ops-xsel-btn !py-2 text-left flex items-center justify-between gap-2"
         aria-haspopup="listbox"
@@ -83,11 +135,13 @@ export default function ExplainedSelect({
           <Icon name="chevron-down" size={14} />
         </span>
       </button>
-      {open && (
+      {open &&
+        createPortal(
         <ul
+          ref={list}
           role="listbox"
           aria-label={label}
-          className="ops-xsel-list absolute z-50 mt-1 left-0 w-full min-w-56 max-h-80 overflow-y-auto p-1"
+          className="ops-xsel-list max-h-80 overflow-y-auto p-1"
         >
           {options.map((o, i) => (
             <li
@@ -114,8 +168,9 @@ export default function ExplainedSelect({
               {options[active].hint}
             </li>
           )}
-        </ul>
-      )}
+        </ul>,
+          layerHost(btn.current)
+        )}
     </div>
   )
 }

@@ -8,7 +8,7 @@ import { Dialog, Kbd } from '../ui'
 /** Every keyboard shortcut (spec 4.17), from SHORTCUTS in lib/hotkeys.ts. */
 
 const GROUPS: { id: (typeof SHORTCUTS)[number]['group']; label: string; icon: IconName; note?: string }[] = [
-  { id: 'Global', label: 'Anywhere', icon: 'command' },
+  { id: 'Global', label: 'Anywhere', icon: 'zap' },
   { id: 'Navigation', label: 'Getting around', icon: 'arrow-right' },
   { id: 'Pages', label: 'Jump to a page', icon: 'grid', note: 'Press G, let go, then the letter.' }
 ]
@@ -37,7 +37,7 @@ export default function ShortcutSheet(): JSX.Element | null {
           const rows = list.filter((s) => s.group === g.id)
           if (rows.length === 0) return null
           return (
-            <section key={g.id} className="lyr-keys-group">
+            <section key={g.id} className="lyr-keys-group" data-group={g.id}>
               <h3 className="lyr-keys-h">
                 <Icon name={g.icon} size={14} /> {t(g.label)}
               </h3>

@@ -1,4 +1,5 @@
 import { t } from '../../lib/i18n'
+import { Icon } from '../icons'
 import type { InstalledPlugin } from '../../lib/marketplace'
 import { MAX_PER_STEP, usableFor, type JobStep } from '../../lib/steps'
 import type { JobOptions, PipelineChoice, SportChoice } from '../../lib/types'
@@ -68,10 +69,12 @@ export default function StepFields({
           <span className="text-sm text-muted">{t(words.none)}</span>
           {add && (
             <button
-              className="text-xs text-gold hover:underline"
+              type="button"
+              className="av-setup"
               onClick={() => onChange(which, [{ id: free[0].id }])}
             >
-              + {t('Choose a plugin')}
+              <Icon name="plus" size={13} />
+              {t('Choose a plugin')}
             </button>
           )}
         </div>
@@ -98,11 +101,13 @@ export default function StepFields({
         ))}
         {add && (
           <button
-            className="text-xs text-gold hover:underline"
+            type="button"
+            className="av-setup"
             title={t('Up to 3 plugins for each step')}
             onClick={() => onChange(which, [...chosen, { id: free[0].id }])}
           >
-            + {t('Add another')}
+            <Icon name="plus" size={13} />
+            {t('Add another')}
           </button>
         )}
       </div>

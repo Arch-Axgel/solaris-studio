@@ -137,6 +137,23 @@ export default function YouTubeBatchDialog({
       : t('Uploading now')
 
   const connected = Boolean(status?.enabled && status.connected)
+  // One clip reads in the singular throughout: "this video", not "these".
+  // Keyed off the clips actually selected, so deselecting down to one reads
+  // the same as opening the dialog with one.
+  const single = selectedClips.length === 1
+  // Why "Preview upload plan" can't be pressed yet, said under it rather than
+  // leaving a dead button.
+  const previewBlocker = !status
+    ? t('Loading your YouTube account…')
+    : !connected
+      ? t('Connect YouTube first.')
+      : !selectedClips.length
+        ? t('Pick at least one clip to preview.')
+        : madeForKids === null
+          ? t('Choose an audience (made for kids or not) to preview the upload.')
+          : scheduleInvalid
+            ? t('Fix the schedule above to preview the upload.')
+            : ''
   const footer = result ? (
     <button className="btn-accent w-full !py-2" onClick={close}>
       {t('Done')}
@@ -152,19 +169,16 @@ export default function YouTubeBatchDialog({
           disabled={busy || !plan.length}
           onClick={() => void publish()}
         >
-          {busy ? t('Queueing…') : `${t('Upload')} ${plan.length} ${t('videos')}`}
+          {busy
+            ? t('Queueing…')
+            : `${t('Upload')} ${plan.length} ${plan.length === 1 ? t('video') : t('videos')}`}
         </button>
       ) : (
         <button
           className="btn-accent flex-1 !py-2"
-          disabled={
-            busy ||
-            !status?.enabled ||
-            !status.connected ||
-            !selectedClips.length ||
-            madeForKids === null ||
-            scheduleInvalid
-          }
+          disabled={busy || Boolean(previewBlocker)}
+          title={previewBlocker || undefined}
+          aria-describedby={previewBlocker && connected ? 'yt-batch-blocker' : undefined}
           onClick={() => void preview()}
         >
           {busy ? t('Preparing preview…') : t('Preview upload plan')}
@@ -183,9 +197,13 @@ export default function YouTubeBatchDialog({
       title={
         clips.length === 1
           ? t('Publish this clip to YouTube')
-          : `${t('Publish')} ${selectedClips.length} ${t('clips')} ${t('to YouTube')}`
+          : `${t('Publish')} ${selectedClips.length} ${single ? t('clip') : t('clips')} ${t('to YouTube')}`
       }
-      description={t('Solaris Studio uploads these videos through your connected Google account.')}
+      description={
+        single
+          ? t('Solaris Studio uploads this video through your connected Google account.')
+          : t('Solaris Studio uploads these videos through your connected Google account.')
+      }
       footer={footer}
     >
       <div className="space-y-4">
@@ -194,7 +212,8 @@ export default function YouTubeBatchDialog({
             <div className="lib-done">
               <SuccessMark />
               <p className="text-success">
-                {result.started.length} {t('YouTube upload(s) queued.')}
+                {result.started.length}{' '}
+                {result.started.length === 1 ? t('YouTube upload queued.') : t('YouTube uploads queued.')}
               </p>
             </div>
             {result.skipped.length > 0 && (
@@ -208,7 +227,9 @@ export default function YouTubeBatchDialog({
               </div>
             )}
             <p className="text-xs text-muted">
-              {t('You can follow upload progress in each clip’s YouTube tab.')}
+              {single
+                ? t('You can follow upload progress in the clip’s YouTube tab.')
+                : t('You can follow upload progress in each clip’s YouTube tab.')}
             </p>
           </div>
         ) : (
@@ -363,9 +384,13 @@ export default function YouTubeBatchDialog({
                       setSpread(v)
                       update()
                     }}
-                    label={t('Schedule and space them out')}
+                    label={single ? t('Schedule it') : t('Schedule and space them out')}
                   />
-                  {spread ? (
+                  {spread && single ? (
+                    <p className="text-[11px] text-muted">
+                      {t('The video uploads now, then YouTube publishes it about 30 minutes later. Solaris Studio must stay open until the upload finishes.')}
+                    </p>
+                  ) : spread ? (
                     <>
                       <div className="flex items-center gap-2 text-sm flex-wrap pl-1">
                         <input
@@ -403,7 +428,7 @@ export default function YouTubeBatchDialog({
                     </>
                   ) : (
                     <p className="text-xs text-warn">
-                      {t('All selected videos will be uploaded now.')}
+                      {single ? t('This video will be uploaded now.') : t('All selected videos will be uploaded now.')}
                     </p>
                   )}
                   {scheduleInvalid && (
@@ -422,7 +447,7 @@ export default function YouTubeBatchDialog({
             {plan && (
               <div className="lib-about">
                 <p className="font-medium text-sm text-ink">
-                  {t('Preview')}: {plan.length} {t('videos')}
+                  {t('Preview')}: {plan.length} {plan.length === 1 ? t('video') : t('videos')}
                 </p>
                 <ol className="max-h-36 overflow-y-auto space-y-1 lib-plan">
                   {plan.map((item, i) => (
@@ -437,6 +462,12 @@ export default function YouTubeBatchDialog({
                 ))}
                 <p className="text-muted">{t('Uploads cannot be taken back.')}</p>
               </div>
+            )}
+
+            {!plan && connected && previewBlocker && (
+              <p id="yt-batch-blocker" className="text-xs text-muted">
+                {previewBlocker}
+              </p>
             )}
 
             {error && <p className="text-xs text-error">{error}</p>}

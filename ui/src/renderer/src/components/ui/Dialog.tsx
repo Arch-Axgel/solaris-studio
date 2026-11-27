@@ -17,6 +17,8 @@ export function useNativeDialog(
   const opener = useRef<Element | null>(null)
   const latest = useRef(opts)
   latest.current = opts
+  const openRef = useRef(open)
+  openRef.current = open
 
   useLayoutEffect(() => {
     if (open) setRender(true)
@@ -59,8 +61,27 @@ export function useNativeDialog(
       e.preventDefault()
       if (latest.current.dismissible !== false) latest.current.onCancel()
     }
+    // Chromium can force-close a dialog whose cancel was prevented without a
+    // user activation in between (close-watcher anti-abuse). If it closed
+    // while React still says open, report it as a cancel (or reopen when it
+    // can't be dismissed), so the state and the DOM never disagree.
+    const onClose = (): void => {
+      if (!openRef.current || d.open || !d.isConnected) return
+      if (latest.current.dismissible !== false) latest.current.onCancel()
+      else
+        try {
+          if (latest.current.modal === false) d.show()
+          else d.showModal()
+        } catch {
+          /* detached */
+        }
+    }
     d.addEventListener('cancel', onCancel)
-    return () => d.removeEventListener('cancel', onCancel)
+    d.addEventListener('close', onClose)
+    return () => {
+      d.removeEventListener('cancel', onCancel)
+      d.removeEventListener('close', onClose)
+    }
   }, [render])
 
   return { ref, render }
